@@ -1,0 +1,47 @@
+[project]
+name = "plataforma-prediccion"
+version = "0.1.0"
+description = "Mini plataforma interna de MLOps/LLMOps para un área de soporte técnico."
+readme = "README.md"
+# Fijado a 3.12: parte del ecosistema de ML (PyTorch, Feast) tarda en soportar
+# la versión más reciente de Python. Ver docs/adr/0002-uv-y-python-312.md.
+requires-python = ">=3.12,<3.13"
+# Solo dependencias de la fase 1. Cada fase agrega las suyas cuando las usa.
+dependencies = [
+    "numpy>=2.1",
+    "pandas>=2.2",
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.2",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "ruff>=0.8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mlplatform", "src/use_cases"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --import-mode=importlib"
+markers = [
+    "integration: requiere servicios levantados con docker compose (Postgres, MLflow)",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# E/F: errores básicos · I: orden de imports · B: bugs comunes
+# UP: sintaxis moderna · SIM: simplificaciones · N: nombres PEP 8
+select = ["E", "F", "I", "B", "UP", "SIM", "N"]

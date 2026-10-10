@@ -1,0 +1,39 @@
+# --- Contexto local de Claude Code (decisión del autor: no se versiona) ---
+CLAUDE.md
+.claude/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# --- Secretos y configuración local ---
+.env
+.env.*
+!.env.example
+
+# --- Datos y artefactos (se regeneran; nunca se versionan) ---
+data/*
+!data/.gitkeep
+mlruns/
+mlartifacts/
+*.parquet
+*.joblib
+*.pkl
+*.onnx
+
+# --- Notebooks ---
+.ipynb_checkpoints/
+
+# --- Editor / SO ---
+.vscode/
+.idea/
+.DS_Store
