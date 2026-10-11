@@ -35,6 +35,10 @@ def build_service(
     return LifecycleService(registry, events, policy), registry
 
 
+def _v(version: str | None) -> str:
+    return f"v{version}" if version else "(none)"
+
+
 def show_status(service: LifecycleService, registry: MlflowModelRegistry, model: str) -> None:
     versions = pd.DataFrame(registry.describe_versions(model))
     if not versions.empty:
@@ -45,7 +49,7 @@ def show_status(service: LifecycleService, registry: MlflowModelRegistry, model:
                 versions.to_string(index=False))  # fmt: skip
     history = service.events.history(model)[-10:]
     lines = [
-        f"{e.created_at[:19]}  {e.event_type:<11} v{e.from_version} -> v{e.to_version}  "
+        f"{e.created_at[:19]}  {e.event_type:<11} {_v(e.from_version)} -> {_v(e.to_version)}  "
         f"by {e.actor}: {e.reason}"
         for e in history
     ]
