@@ -29,3 +29,20 @@ def test_platform_does_not_import_use_cases() -> None:
     ]
 
     assert not offenders, f"mlplatform no debe importar use_cases: {offenders}"
+
+
+LIFECYCLE_DIR = PLATFORM_DIR / "lifecycle"
+INFRASTRUCTURE_LIBRARIES = {"mlflow", "sqlalchemy", "psycopg", "boto3"}
+
+
+def test_lifecycle_policy_does_not_depend_on_infrastructure() -> None:
+    """La política de promoción se prueba sin MLflow ni base de datos (ver ADR 0001)."""
+    offenders = {
+        str(path.relative_to(PLATFORM_DIR)): sorted(
+            m for m in _imported_modules(path) if m.split(".")[0] in INFRASTRUCTURE_LIBRARIES
+        )
+        for path in LIFECYCLE_DIR.rglob("*.py")
+    }
+    offenders = {path: mods for path, mods in offenders.items() if mods}
+
+    assert not offenders, f"lifecycle imports infrastructure: {offenders}"
