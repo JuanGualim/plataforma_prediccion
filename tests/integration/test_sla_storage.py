@@ -36,6 +36,8 @@ def test_roundtrip_preserves_data(engine, small_sim) -> None:
     pd.testing.assert_frame_equal(
         loaded, small_sim.tickets, check_dtype=False, check_index_type=False
     )
+    # Nombres de columna str "puros": scikit-learn ignora subclases de str.
+    assert all(type(col) is str for col in loaded.columns)
 
 
 def test_replace_is_idempotent(engine, small_sim) -> None:

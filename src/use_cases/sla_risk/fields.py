@@ -50,9 +50,11 @@ TICKETS = FieldCatalog(
 
 TARGET = "sla_breached"
 
-# Features tabulares del modelo de SLA. Los campos de texto (subject, description) son T0,
-# pero se reservan para el clasificador de la fase 7.
+# Columnas crudas que recibe el modelo de SLA (el pipeline deriva el resto; ver features.py).
+# `created_at` entra solo para derivar hora y día de la semana. Los campos de texto (subject,
+# description) son T0, pero se reservan para el clasificador de la fase 7.
 FEATURES = [
+    "created_at",
     "channel",
     "category",
     "priority",

@@ -78,6 +78,9 @@ def read_tickets(engine: Engine, schema: str = SCHEMA) -> pd.DataFrame:
     """Read tickets with the same dtypes the simulator produces."""
     with engine.connect() as conn:
         df = pd.read_sql_table("tickets", conn, schema=schema)
+    # SQLAlchemy entrega los nombres como `quoted_name` (subclase de str); scikit-learn solo
+    # reconoce nombres de columna de tipo str exacto, así que se normalizan.
+    df.columns = [str(col) for col in df.columns]
     df["ticket_id"] = df["ticket_id"].astype(str)  # el driver devuelve uuid.UUID
     for col in TIMESTAMP_COLUMNS:
         df[col] = pd.to_datetime(df[col], utc=True).dt.tz_convert(BUSINESS_TZ).dt.as_unit("us")

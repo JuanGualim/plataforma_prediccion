@@ -12,7 +12,10 @@ del umbral es una decisión aparte (fase 2).
 """
 
 import numpy as np
+import pandas as pd
 from sklearn.metrics import average_precision_score, brier_score_loss, log_loss, roc_auc_score
+
+from mlplatform.training.thresholds import threshold_metrics
 
 _EPS = 1e-6
 
@@ -29,3 +32,52 @@ def binary_classification_metrics(y_true, y_score) -> dict[str, float]:
         "brier": float(brier_score_loss(y_true, y_score)),
         "log_loss": float(log_loss(y_true, y_score, labels=[0, 1])),
     }
+
+
+def calibration_table(y_true, y_score, n_bins: int = 10) -> pd.DataFrame:
+    """Compare predicted probability with the observed rate, by score decile.
+
+    Un modelo calibrado tiene `mean_predicted ≈ observed_rate` en cada fila: cuando dice 30 %,
+    ocurre ~30 % de las veces. Importa si la probabilidad se muestra a una persona o se usa
+    para calcular costos.
+    """
+    frame = pd.DataFrame({"y": np.asarray(y_true, dtype=int), "score": np.asarray(y_score)})
+    frame["bin"] = pd.qcut(frame["score"], q=n_bins, duplicates="drop")
+    table = frame.groupby("bin", observed=True).agg(
+        n=("y", "size"), mean_predicted=("score", "mean"), observed_rate=("y", "mean")
+    )
+    return table.reset_index(drop=True)
+
+
+def metrics_by_segment(y_true, y_score, segments, threshold: float) -> pd.DataFrame:
+    """Per-segment volume, prevalence and decision quality (e.g. by customer tier).
+
+    Un buen promedio puede esconder un segmento donde el modelo falla; este corte es la base
+    de la model card y del monitoreo por segmento.
+    """
+    frame = pd.DataFrame(
+        {
+            "y": np.asarray(y_true, dtype=int),
+            "score": np.asarray(y_score),
+            "segment": np.asarray(segments),
+        }
+    )
+    rows = []
+    for segment, group in frame.groupby("segment", observed=True):
+        decision = threshold_metrics(group["y"], group["score"], threshold)
+        both_classes = group["y"].nunique() == 2
+        rows.append(
+            {
+                "segment": segment,
+                "n": len(group),
+                "prevalence": group["y"].mean(),
+                "mean_score": group["score"].mean(),
+                "pr_auc": average_precision_score(group["y"], group["score"])
+                if both_classes
+                else np.nan,
+                "precision": decision["precision"],
+                "recall": decision["recall"],
+                "alert_rate": decision["alert_rate"],
+            }
+        )
+    return pd.DataFrame(rows)
