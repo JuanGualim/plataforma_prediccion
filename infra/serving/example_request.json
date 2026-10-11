@@ -1,0 +1,26 @@
+{
+  "instances": [
+    {
+      "ticket_id": "EJEMPLO-ALTO-RIESGO",
+      "created_at": "2025-08-04T19:30:00-05:00",
+      "channel": "email",
+      "category": "hardware",
+      "priority": "low",
+      "customer_tier": "enterprise",
+      "product": "router_x200",
+      "sla_hours": 24,
+      "open_tickets_in_queue": 140
+    },
+    {
+      "ticket_id": "EJEMPLO-BAJO-RIESGO",
+      "created_at": "2025-08-05T10:15:00-05:00",
+      "channel": "phone",
+      "category": "account",
+      "priority": "high",
+      "customer_tier": "basic",
+      "product": "mobile_app",
+      "sla_hours": 24,
+      "open_tickets_in_queue": 60
+    }
+  ]
+}

@@ -43,6 +43,10 @@ os.execvp(
         "--serve-artifacts",
         "--artifacts-destination",
         os.environ.get("MLFLOW_ARTIFACTS_DESTINATION", "s3://mlflow"),
+        # Protección contra DNS rebinding: solo se aceptan peticiones dirigidas a estos nombres.
+        # `mlflow:5000` es el nombre interno que usan otros contenedores (p. ej. serving).
+        "--allowed-hosts",
+        os.environ.get("MLFLOW_ALLOWED_HOSTS", "localhost:*,127.0.0.1:*,mlflow:5000"),
         "--host",
         "0.0.0.0",
         "--port",

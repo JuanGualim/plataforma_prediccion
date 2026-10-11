@@ -1,7 +1,8 @@
 # Punto de entrada único para operar el proyecto. `make help` lista los comandos.
 .DEFAULT_GOAL := help
 .PHONY: help env setup up down logs psql db-reset lint format test test-integration \
-        data baseline train promote rollback models serve clean
+        data baseline train promote rollback models serve serve-dev predict-example \
+        latency clean
 
 UV ?= uv
 
@@ -69,8 +70,26 @@ rollback: ## [Fase 3] Devuelve champion a la versión anterior (REASON="..." obl
 models: ## [Fase 3] Muestra versiones, champion y últimos eventos del registry
 	$(UV) run python -m use_cases.sla_risk.registry_cli status
 
-serve: ## [Fase 4] Levanta la API de predicción
-	@echo "Pendiente (fase 4): serving con FastAPI"
+SERVING_URL ?= http://localhost:8000
+EXAMPLE_REQUEST := infra/serving/example_request.json
+
+serve: ## [Fase 4] Construye y levanta la API de predicción y espera a que esté lista
+	docker compose up -d --build --wait serving
+	@for i in $$(seq 1 30); do \
+		curl -fs $(SERVING_URL)/ready >/dev/null && { curl -s $(SERVING_URL)/ready; echo; exit 0; }; \
+		sleep 2; \
+	done; echo "La API no está lista:"; curl -s $(SERVING_URL)/ready; echo; exit 1
+
+serve-dev: ## [Fase 4] API local con recarga de código (puerto 8001; usa los servicios de Docker)
+	$(UV) run uvicorn use_cases.sla_risk.serving:app_factory --factory --reload --port 8001
+
+predict-example: ## [Fase 4] Envía dos tickets de ejemplo a la API
+	@curl -s -X POST $(SERVING_URL)/predict -H 'content-type: application/json' \
+		-d @$(EXAMPLE_REQUEST); echo
+
+latency: ## [Fase 4] Mide la latencia de /predict (300 peticiones secuenciales)
+	$(UV) run python -m mlplatform.serving.latency_probe --url $(SERVING_URL) \
+		--payload $(EXAMPLE_REQUEST) $(ARGS)
 
 # --- Limpieza ----------------------------------------------------------------
 clean: ## Borra cachés locales (no toca datos ni volúmenes)

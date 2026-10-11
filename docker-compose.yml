@@ -1,6 +1,6 @@
 # Servicios de infraestructura local.
 # Fase 1: PostgreSQL. Fase 3: MLflow (tracking + registry) y SeaweedFS (artefactos, API S3).
-# El servicio de serving se agrega en la fase 4.
+# Fase 4: serving (API de predicción del modelo champion).
 services:
   postgres:
     image: postgres:16-alpine
@@ -76,6 +76,32 @@ services:
       retries: 30
       # El primer arranque crea las tablas de MLflow (migraciones) y tarda más.
       start_period: 90s
+    restart: unless-stopped
+
+  serving:
+    build:
+      context: .
+      dockerfile: infra/serving/Dockerfile
+    image: mlplatform-serving:dev
+    container_name: mlplatform-serving
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-support}
+      POSTGRES_USER: ${POSTGRES_USER:-mlplatform}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mlplatform_local}
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      LOG_FORMAT: json
+      SERVING_REFRESH_SECONDS: ${SERVING_REFRESH_SECONDS:-15}
+    ports:
+      - "127.0.0.1:${SERVING_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mlflow:
+        condition: service_healthy
+    # El healthcheck (Dockerfile) usa /health: el contenedor está "sano" aunque aún no haya
+    # champion. Que haya un modelo listo lo dice /ready (ver `make serve`).
     restart: unless-stopped
 
 volumes:

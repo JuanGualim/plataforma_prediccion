@@ -1,0 +1,15 @@
+# Solo pyproject.toml, uv.lock, README.md y src/ entran a la imagen de serving.
+.git
+.github
+.venv
+.env
+.env.*
+.pytest_cache
+.ruff_cache
+**/__pycache__
+data
+docs
+tests
+infra
+CLAUDE.md
+.claude
