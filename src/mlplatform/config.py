@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     # SecretStr evita que la contraseña aparezca al imprimir o loguear Settings.
     postgres_password: SecretStr = SecretStr("mlplatform_local")
 
+    # MLflow: tracking + model registry. Los artefactos pasan siempre por el servidor
+    # (modo proxy), así los clientes no necesitan credenciales del almacenamiento.
+    mlflow_tracking_uri: str = "http://localhost:5000"
+
     @property
     def database_url(self) -> str:
         """URL de SQLAlchemy usando el driver psycopg 3."""

@@ -16,6 +16,10 @@ dependencies = [
     "pydantic-settings>=2.6",
     # Fase 1: métricas y baseline DummyClassifier (fase 2 lo usa para pipelines y modelos).
     "scikit-learn>=1.6",
+    # Fase 3: cliente de MLflow (sin servidor). Versión exacta = versión del servidor en Docker.
+    "mlflow-skinny==3.17.0",
+    # Serialización segura de modelos scikit-learn (no ejecuta código al cargar, a diferencia de pickle).
+    "skops>=0.16",
 ]
 
 [dependency-groups]
