@@ -85,7 +85,7 @@ serve-dev: ## [Fase 4] API local con recarga de código (puerto 8001; usa los se
 
 predict-example: ## [Fase 4] Envía dos tickets de ejemplo a la API
 	@curl -s -X POST $(SERVING_URL)/predict -H 'content-type: application/json' \
-		-d @$(EXAMPLE_REQUEST); echo
+		-H 'x-traffic-source: synthetic' -d @$(EXAMPLE_REQUEST); echo
 
 latency: ## [Fase 4] Mide la latencia de /predict (300 peticiones secuenciales)
 	$(UV) run python -m mlplatform.serving.latency_probe --url $(SERVING_URL) \

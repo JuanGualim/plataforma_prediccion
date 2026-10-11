@@ -124,6 +124,18 @@ def test_request_id_is_propagated_and_predictions_logged(setup) -> None:
     assert record.features["channel"] == "email"
 
 
+def test_traffic_source_is_recorded(setup) -> None:
+    client, _, log, _ = setup
+
+    client.post("/predict", json={"instances": [ticket()]})
+    client.post(
+        "/predict", json={"instances": [ticket()]}, headers={"x-traffic-source": "Synthetic"}
+    )
+    client.post("/predict", json={"instances": [ticket()]}, headers={"x-traffic-source": "otro"})
+
+    assert [r.traffic_source for r in log.records[-3:]] == ["live", "synthetic", "live"]
+
+
 def test_unseen_category_is_served(setup) -> None:
     client, *_ = setup
 

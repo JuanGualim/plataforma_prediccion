@@ -32,6 +32,7 @@ from mlplatform.serving.models import ModelHolder, ModelSource
 from mlplatform.serving.prediction_log import PredictionLog, PredictionRecord
 
 logger = logging.getLogger(__name__)
+SYNTHETIC = "synthetic"
 
 
 @dataclass(frozen=True)
@@ -96,6 +97,9 @@ def create_app(
     async def request_context(request: Request, call_next):
         request_id = request.headers.get("x-request-id") or uuid.uuid4().hex
         request.state.request_id = request_id
+        # Tráfico de prueba se declara con `X-Traffic-Source: synthetic`; el resto es real.
+        declared = request.headers.get("x-traffic-source", "").strip().lower()
+        request.state.traffic_source = SYNTHETIC if declared == SYNTHETIC else "live"
         start = time.perf_counter()
         response = await call_next(request)
         elapsed_ms = (time.perf_counter() - start) * 1000
@@ -108,6 +112,7 @@ def create_app(
                 "path": request.url.path,
                 "status": response.status_code,
                 "latency_ms": round(elapsed_ms, 2),
+                "traffic_source": request.state.traffic_source,
             },
         )
         return response
@@ -187,6 +192,7 @@ def create_app(
                     features=instance.model_dump(mode="json", exclude=non_features),
                     predicted_at=now,
                     latency_ms=latency_ms / len(predictions),
+                    traffic_source=request.state.traffic_source,
                 )
                 for p, instance in zip(predictions, body.instances, strict=True)
             ]

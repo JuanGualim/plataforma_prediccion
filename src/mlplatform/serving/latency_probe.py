@@ -27,7 +27,9 @@ def probe(url: str, payload: dict, n_requests: int, warmup: int = 10) -> dict[st
 
     def call() -> float:
         request = urllib.request.Request(
-            f"{url}/predict", data=body, headers={"content-type": "application/json"}
+            f"{url}/predict",
+            data=body,
+            headers={"content-type": "application/json", "x-traffic-source": "synthetic"},
         )
         start = time.perf_counter()
         with urllib.request.urlopen(request, timeout=10) as response:

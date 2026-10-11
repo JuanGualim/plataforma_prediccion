@@ -62,14 +62,14 @@ def test_prediction_is_logged_with_its_version(serving) -> None:
     request = urllib.request.Request(
         f"{URL}/predict",
         data=json.dumps(payload).encode(),
-        headers={"content-type": "application/json"},
+        headers={"content-type": "application/json", "x-traffic-source": "synthetic"},
     )
     with urllib.request.urlopen(request, timeout=5) as response:
         body = json.loads(response.read())
 
     # El registro se escribe después de responder: se espera brevemente.
     query = sa.text(
-        "SELECT model_version, score, features->>'channel' AS channel "
+        "SELECT model_version, score, features->>'channel' AS channel, traffic_source "
         "FROM monitoring.predictions WHERE entity_id = :id"
     )
     row = None
@@ -84,6 +84,7 @@ def test_prediction_is_logged_with_its_version(serving) -> None:
     assert row["model_version"] == body["model_version"]
     assert row["score"] == pytest.approx(body["predictions"][0]["score"])
     assert row["channel"] == "chat"
+    assert row["traffic_source"] == "synthetic"
 
 
 def test_prediction_log_round_trip_in_isolated_schema() -> None:

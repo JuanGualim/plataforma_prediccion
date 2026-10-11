@@ -32,6 +32,9 @@ class PredictionRecord:
     features: dict
     predicted_at: str
     latency_ms: float
+    # "live" o "synthetic" (pruebas de carga, ejemplos, tests). El monitoreo debe ignorar el
+    # tráfico sintético: 10.000 copias del mismo ticket parecerían un drift enorme.
+    traffic_source: str = "live"
 
 
 class PredictionLog(Protocol):
@@ -56,10 +59,19 @@ class PostgresPredictionLog:
             sa.Column("features", JSONB, nullable=False),
             sa.Column("predicted_at", sa.DateTime(timezone=True), nullable=False, index=True),
             sa.Column("latency_ms", sa.Float, nullable=False),
+            sa.Column("traffic_source", sa.Text, nullable=False, server_default="live"),
         )
         with engine.begin() as conn:
             conn.execute(sa.schema.CreateSchema(schema, if_not_exists=True))
             self.metadata.create_all(conn)
+            # Migración mínima e idempotente para tablas creadas antes de esta columna.
+            # Con más cambios de esquema, esto pasaría a migraciones versionadas (Alembic).
+            conn.execute(
+                sa.text(
+                    f'ALTER TABLE "{schema}".predictions '
+                    "ADD COLUMN IF NOT EXISTS traffic_source text NOT NULL DEFAULT 'live'"
+                )
+            )
 
     def write(self, records: list[PredictionRecord]) -> None:
         """Best effort: a logging failure must never turn a served prediction into an error."""
