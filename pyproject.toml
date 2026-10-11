@@ -14,6 +14,8 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
+    # Fase 1: métricas y baseline DummyClassifier (fase 2 lo usa para pipelines y modelos).
+    "scikit-learn>=1.6",
 ]
 
 [dependency-groups]
@@ -45,3 +47,7 @@ src = ["src", "tests"]
 # E/F: errores básicos · I: orden de imports · B: bugs comunes
 # UP: sintaxis moderna · SIM: simplificaciones · N: nombres PEP 8
 select = ["E", "F", "I", "B", "UP", "SIM", "N"]
+
+[tool.ruff.lint.pep8-naming]
+# Convención de ML (scikit-learn): X = matriz de features, y = etiqueta.
+extend-ignore-names = ["X", "X_*"]
