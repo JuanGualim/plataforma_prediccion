@@ -1,7 +1,7 @@
 # Punto de entrada único para operar el proyecto. `make help` lista los comandos.
 .DEFAULT_GOAL := help
 .PHONY: help env setup up down logs psql db-reset lint format test test-integration \
-        data train promote rollback serve clean
+        data baseline train promote rollback serve clean
 
 UV ?= uv
 
@@ -48,9 +48,12 @@ test: ## Pruebas unitarias (no requieren servicios)
 test-integration: ## Pruebas de integración (requieren `make up`)
 	$(UV) run pytest -m integration
 
-# --- Ciclo de vida del modelo (pendientes) ------------------------------------
-data: ## [Fase 1] Genera datos sintéticos y los carga en Postgres
-	@echo "Pendiente (fase 1): simulador de tickets"
+# --- Ciclo de vida del modelo --------------------------------------------------
+data: ## [Fase 1] Genera tickets sintéticos, los valida y los carga en Postgres (requiere `make up`)
+	$(UV) run python -m use_cases.sla_risk.simulate
+
+baseline: ## [Fase 1] Evalúa los baselines del modelo de SLA (requiere `make data`)
+	$(UV) run python -m use_cases.sla_risk.run_baseline
 
 train: ## [Fase 2] Entrena el modelo de riesgo de SLA
 	@echo "Pendiente (fase 2): entrenamiento"
