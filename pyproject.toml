@@ -20,10 +20,14 @@ dependencies = [
     "mlflow-skinny==3.17.0",
     # Serialización segura de modelos scikit-learn (no ejecuta código al cargar, a diferencia de pickle).
     "skops>=0.16",
+    # Fase 4: API de predicción.
+    "fastapi>=0.143",
+    "uvicorn>=0.54",
 ]
 
 [dependency-groups]
 dev = [
+    "httpx2>=2.13",  # cliente de pruebas de FastAPI/Starlette
     "pytest>=8.3",
     "ruff>=0.8",
 ]

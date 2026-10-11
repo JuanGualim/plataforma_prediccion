@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     # (modo proxy), así los clientes no necesitan credenciales del almacenamiento.
     mlflow_tracking_uri: str = "http://localhost:5000"
 
+    # Serving: cada cuántos segundos se revisa si cambió el champion (0 = nunca) y tamaño
+    # máximo de un lote de predicción.
+    serving_refresh_seconds: int = 30
+    serving_max_batch: int = 100
+
     @property
     def database_url(self) -> str:
         """URL de SQLAlchemy usando el driver psycopg 3."""
