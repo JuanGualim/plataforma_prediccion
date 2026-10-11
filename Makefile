@@ -55,8 +55,8 @@ data: ## [Fase 1] Genera tickets sintéticos, los valida y los carga en Postgres
 baseline: ## [Fase 1] Evalúa los baselines del modelo de SLA (requiere `make data`)
 	$(UV) run python -m use_cases.sla_risk.run_baseline
 
-train: ## [Fase 2] Entrena el modelo de riesgo de SLA
-	@echo "Pendiente (fase 2): entrenamiento"
+train: ## [Fase 2] Entrena, selecciona y evalúa el modelo de SLA (requiere `make data`)
+	$(UV) run python -m use_cases.sla_risk.train
 
 promote: ## [Fase 3] Evalúa un candidato contra el champion y lo promueve si pasa la puerta
 	@echo "Pendiente (fase 3): puerta de promoción"
