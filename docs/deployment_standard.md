@@ -1,46 +1,71 @@
 # Estándar de despliegue
 
-> **Estado:** borrador (fase 1). Se implementa y se hace cumplir de forma automática en la fase 3
-> (`mlplatform.lifecycle`).
+> **Estado:** Ejecutado (fase 3). Implementado en `mlplatform.lifecycle` (política) y
+> `mlplatform.registry` (MLflow y bitácora). Probado con dobles en memoria y contra MLflow real.
 
-Este documento define qué debe cumplir **cualquier** modelo para desplegarse en la plataforma,
-sin importar el equipo ni el tipo de modelo (tabular, texto o LLM).
+Este documento define qué debe cumplir **cualquier** modelo para desplegarse en la plataforma, sin
+importar el equipo ni el tipo de modelo.
 
 ## 1. Contrato del modelo (obligatorio)
 
-Todo modelo registrado debe incluir:
+Cada versión registrada guarda un `contract.json` (esquema `DeploymentContract`):
 
-| Elemento | Descripción | Cómo se verifica |
+| Elemento | Qué contiene | Cómo se verifica |
 |---|---|---|
-| Firma de entrada/salida | Esquema de las columnas o campos que recibe y devuelve | _Por definir (fase 3)_ |
-| Model card | Propósito, datos, métricas, limitaciones, responsable | _Por definir_ |
-| Métricas de validación | Calculadas sobre un conjunto de validación temporal | _Por definir_ |
-| Referencia al dataset | Versión, hash o consulta, y rango de fechas usado | _Por definir_ |
-| Commit de git | Commit exacto del código que lo entrenó (sin cambios sin commitear) | _Por definir_ |
-| Dependencias fijadas | Versiones exactas (lockfile) | _Por definir_ |
-| Umbral de decisión | Valor, criterio (p. ej. costo FN/FP) y conjunto donde se eligió. El preprocesamiento viaja dentro del mismo artefacto | Implementado en fase 2 (`report.json`); se formaliza en fase 3 |
+| Firma de entrada/salida | Columnas de entrada con su tipo; descripción de la salida | pydantic: al menos una entrada. MLflow guarda además su propia firma y un ejemplo de entrada |
+| Model card | Markdown con secciones obligatorias: Propósito · Uso previsto y fuera de alcance · Datos · Métricas · Umbral de decisión · Limitaciones · Responsable | `contract_violations`: deben estar todas las secciones |
+| Métricas | Validación y prueba del modelo, y prueba del baseline | Debe existir la métrica principal en validación y en prueba |
+| Umbral de decisión | Valor en (0, 1), criterio, conjunto donde se eligió (siempre validación) y costos usados | pydantic (rango y conjunto permitido) |
+| Referencia al dataset | Fuente, huella sha256 del contenido, rango de fechas, cortes de entrenamiento y validación, filas por conjunto | pydantic: la huella debe tener 64 caracteres hexadecimales |
+| Código | Commit de git y si había cambios sin commitear | Política: commit conocido y **sin cambios pendientes** |
+| Dependencias | sha256 de `uv.lock` y versiones clave | pydantic: hash completo |
+| Chequeos de datos | Resultado de validar la tabla de entrenamiento contra el catálogo | Política: deben haber pasado |
+
+Un contrato estructuralmente incompleto **no se puede construir**. Uno con violaciones de política sí
+se registra (queda trazado, con el tag `contract_violations`), pero **no puede promoverse**.
 
 ## 2. Estados y alias
 
-- **candidate:** registrado y con el contrato completo.
-- **champion:** la versión que atiende el tráfico. Hay una sola por modelo.
-- **archived:** versión retirada (se conserva por trazabilidad).
+| Estado (tag `status`) | Significado |
+|---|---|
+| `candidate` | Registrado tras entrenar; aún no evaluado por la puerta |
+| `champion` | Versión en producción; además tiene el **alias `champion`** (hay uno solo por modelo) |
+| `rejected` | La puerta lo rechazó |
+| `archived` | Fue champion y lo reemplazó otra versión aprobada |
+| `rolled_back` | Fue champion y se revirtió por un incidente |
 
-## 3. Puerta de promoción
+El serving (fase 4) cargará siempre `models:/<modelo>@champion`.
 
-Un candidato pasa a champion **solo si**:
+## 3. Puerta de promoción (`make promote`)
 
-1. Cumple el contrato completo.
-2. Pasa los chequeos de datos (esquema, nulos, rangos).
-3. Supera al champion actual en la métrica principal sobre el **mismo** conjunto de validación,
-   sin empeorar las métricas de protección más allá de una tolerancia. _Métricas y tolerancias: por definir en la fase 2._
+Candidato, champion y baseline se reevalúan **sobre la misma ventana** (la de prueba del candidato),
+con los datos actuales. Aprueba solo si se cumplen **todos** los chequeos:
 
-## 4. Rollback
+| Chequeo | Regla por defecto |
+|---|---|
+| `contract` | Sin violaciones de política |
+| `unseen_evaluation_window` | La ventana empieza después de todo lo que ambos modelos usaron (entrenamiento y validación) |
+| `beats_baseline` | Métrica principal (PR-AUC) del candidato > baseline |
+| `vs_champion` | PR-AUC del candidato ≥ PR-AUC del champion + `min_improvement` (0) |
+| `guardrail_brier` | Brier del candidato ≤ champion + 0,005 |
+| `guardrail_cost_per_ticket` | Costo por ticket del candidato ≤ champion + 0,01 |
 
-- Un solo comando (`make rollback`) devuelve el alias champion a la versión anterior.
-- Cada promoción y cada rollback se registran: quién, cuándo, de qué versión a cuál y por qué.
+Sin champion (primera promoción), solo aplican los tres primeros.
 
-## 5. Serving
+## 4. Rollback (`make rollback REASON="..."`)
+
+- Un solo comando devuelve el alias `champion` a la versión que lo era antes de la promoción vigente.
+- **Exige un motivo** y no pasa por la puerta (la versión destino ya fue aprobada antes).
+- Si no hay versión anterior, falla con un mensaje claro en lugar de dejar el registry inconsistente.
+
+## 5. Auditoría
+
+Cada promoción, rechazo y rollback se agrega a `governance.model_events` (PostgreSQL, solo inserción)
+con actor, motivo, versiones de origen y destino, y la evaluación completa en JSON. `make models`
+muestra las versiones y los últimos eventos.
+
+## 6. Serving (fase 4, diseño)
 
 - Endpoints obligatorios: `/predict`, `/health`, `/ready`, `/metadata`.
 - Toda respuesta de `/predict` incluye `model_name` y `model_version`.
+- El umbral se lee del contrato de la versión champion.

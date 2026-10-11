@@ -1,6 +1,6 @@
 # Arquitectura
 
-> **Estado:** fases 1 y 2 completadas. Este documento crece con cada fase.
+> **Estado:** fases 1 a 3 completadas. Este documento crece con cada fase.
 > Convención de honestidad: cada componente se marca como **Ejecutado** (corre y está
 > probado en este repositorio) o **Diseñado** (solo documentado; no se ha ejecutado).
 
@@ -18,9 +18,9 @@
 │                          serving (FastAPI) ──► monitoring (servicio · datos · modelo)            │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
         │                         │                               │
-   PostgreSQL               MLflow + MinIO                  Logs / métricas
+   PostgreSQL              MLflow + SeaweedFS               Logs / métricas
  (tickets, eventos,     (metadatos en Postgres,
-  predicciones)          artefactos en MinIO)
+  auditoría)             artefactos S3 vía proxy)
 ```
 
 ## Componentes y estado
@@ -35,14 +35,16 @@
 | Simulador de tickets | `use_cases.sla_risk.simulator` | 1 | Ejecutado |
 | Split temporal con madurez de etiquetas | `mlplatform.training.splits`, `use_cases.sla_risk.dataset` | 1 | Ejecutado (ampliado en fase 2) |
 | Métricas y baselines | `mlplatform.training.metrics`, `mlplatform.training.baselines` | 1 | Ejecutado |
-| CI (lint + pruebas) | `.github/workflows/ci.yml` | 1 | Diseñado (no se ha ejecutado en GitHub) |
+| CI (lint + pruebas + integración con el stack completo) | `.github/workflows/ci.yml` | 1-3 | Diseñado (no se ha ejecutado en GitHub) |
 | Split temporal train / validation / test | `use_cases.sla_risk.dataset` | 2 | Ejecutado |
 | Pipelines de scikit-learn (preprocesamiento dentro del artefacto) | `use_cases.sla_risk.features`, `.models` | 2 | Ejecutado |
 | Selección de candidatos y umbral por costo | `mlplatform.training.selection`, `.thresholds` | 2 | Ejecutado |
 | Calibración, segmentos e importancia por permutación | `mlplatform.training.metrics`, `use_cases.sla_risk.train` | 2 | Ejecutado |
-| Trazabilidad (commit + entorno) del entrenamiento | `mlplatform.training.lineage` | 2 | Ejecutado (en JSON; MLflow en la fase 3) |
-| Tracking y registry (MLflow + MinIO) | `mlplatform.registry` | 3 | Pendiente |
-| Contrato, puerta de promoción, rollback | `mlplatform.lifecycle` | 3 | Pendiente |
+| Trazabilidad (commit + entorno + lockfile + huella del dataset) | `mlplatform.training.lineage`, `mlplatform.data.fingerprint` | 2-3 | Ejecutado |
+| Tracking y registry (MLflow 3.17 + SeaweedFS) | `docker-compose.yml`, `infra/mlflow`, `mlplatform.registry.mlflow_registry` | 3 | Ejecutado |
+| Contrato de despliegue y model card | `mlplatform.lifecycle.contract`, `use_cases.sla_risk.contract`, `.model_card` | 3 | Ejecutado |
+| Puerta de promoción y rollback | `mlplatform.lifecycle.promotion`, `.service`, `use_cases.sla_risk.registry_cli` | 3 | Ejecutado |
+| Bitácora de auditoría | `mlplatform.registry.event_log` (`governance.model_events`) | 3 | Ejecutado |
 | Serving | `mlplatform.serving` | 4 | Pendiente |
 | Monitoreo | `mlplatform.monitoring` | 5 | Pendiente |
 | Feature store (Feast) | — | 6 | Pendiente (opcional) |
@@ -61,12 +63,16 @@
    → candidatos (pipelines) entrenados en train → selección en validation → umbral por costo en
    validation → evaluación única en test contra el baseline → `model.joblib` + `report.json` (`make train`).
 
+4. **Registro (fase 3, ejecutado):** el entrenamiento construye el contrato y la model card y los
+   registra en MLflow como versión `candidate`, con un run hijo por candidato.
+5. **Promoción (fase 3, ejecutado):** `make promote` → candidato, champion y baseline reevaluados en la
+   misma ventana → puerta → alias `champion` + tags + evento en `governance.model_events`.
+6. **Rollback (fase 3, ejecutado):** `make rollback REASON=...` → alias a la versión anterior + evento.
+
 _Por completar en las siguientes fases:_
 
-1. **Registro:** el resultado del entrenamiento se registra en MLflow como candidato.
-2. **Promoción:** candidato → validación del contrato → comparación con champion → cambio de alias.
-3. **Predicción:** request → validación de esquema → modelo champion → respuesta con versión → log de predicción.
-4. **Retroalimentación:** llega la etiqueta real → unión con la predicción → métricas del modelo.
+1. **Predicción:** request → validación de esquema → modelo `@champion` → respuesta con versión → log de predicción.
+2. **Retroalimentación:** llega la etiqueta real → unión con la predicción → métricas del modelo.
 
 ## Decisiones
 

@@ -6,9 +6,12 @@ equipos de Data Science entrenen, registren, desplieguen, monitoreen y retiren m
 forma uniforme. Los modelos son sus "clientes" y sirven para probar que la plataforma funciona
 con casos de distinta naturaleza.
 
-> **Estado actual:** fases 1 y 2 completadas. Hay datos sintéticos en PostgreSQL, una barrera contra
-> fugas de información y un modelo de SLA entrenado: regresión logística con PR-AUC 0,432 en prueba,
-> frente a 0,292 del baseline. Ver la [hoja de ruta](#hoja-de-ruta).
+> **Estado actual:** fases 1 a 3 completadas.
+> - Datos sintéticos en PostgreSQL, con una barrera contra fugas de información.
+> - Modelo de SLA entrenado y registrado en MLflow con su contrato de despliegue.
+> - Puerta de promoción, rollback en un comando y bitácora de auditoría.
+>
+> Ver la [hoja de ruta](#hoja-de-ruta).
 
 ## El problema
 
@@ -34,7 +37,7 @@ semanas después. Esta plataforma propone un camino común:
 ## Alcance
 
 - Ciclo de vida completo de un modelo tabular: datos → entrenamiento → registro → promoción → serving → monitoreo → incidente → rollback.
-- Experimentos y registro con MLflow (metadatos en PostgreSQL, artefactos en MinIO).
+- Experimentos y registro con MLflow (metadatos en PostgreSQL, artefactos en SeaweedFS con API S3).
 - Serving con FastAPI, empaquetado con Docker Compose y, más adelante, Kubernetes local (kind).
 - Comparación de costo y latencia entre variantes de un modelo y costo por consulta del RAG.
 - Documentación de arquitectura, decisiones (ADR), estándar de despliegue, gobierno y runbook.
@@ -53,10 +56,13 @@ Requisitos: [uv](https://docs.astral.sh/uv/), Docker con Compose y `make`.
 ```bash
 make setup             # crea .env, instala Python 3.12 y las dependencias
 make test              # pruebas unitarias (incluye las de fuga de información)
-make up                # levanta PostgreSQL (puerto 5433 en localhost)
+make up                # levanta PostgreSQL (5433), MLflow (http://localhost:5000) y SeaweedFS
 make data              # genera tickets sintéticos, los valida y los carga
 make baseline          # evalúa los baselines del modelo de SLA
-make train             # entrena, elige modelo y umbral, evalúa en prueba
+make train             # entrena, elige modelo y umbral, y registra un candidato en MLflow
+make promote           # pasa el último candidato por la puerta de promoción
+make rollback REASON="..."  # devuelve champion a la versión anterior
+make models            # versiones, champion y bitácora de eventos
 make test-integration  # pruebas contra PostgreSQL
 make help              # lista todos los comandos
 ```
@@ -67,13 +73,13 @@ make help              # lista todos los comandos
 src/mlplatform/    La plataforma (genérica; nunca importa de use_cases)
   data/            Conexión a Postgres, esquemas, validación de datos
   training/        Splits temporales, métricas, selección de umbral
-  registry/        Adaptador sobre MLflow (mecanismo)
+  registry/        Adaptadores: MLflow y bitácora de auditoría (mecanismo)
   lifecycle/       Contrato, puerta de promoción, rollback (política)
   serving/         API FastAPI genérica
   monitoring/      Monitoreo de servicio, datos y modelo
 src/use_cases/     Modelos cliente: sla_risk, ticket_routing, support_rag
 tests/             unit/ (sin servicios) e integration/ (con docker compose)
-infra/             Scripts de Postgres; manifiestos de Kubernetes (fase 10)
+infra/             Postgres, imagen de MLflow; manifiestos de Kubernetes (fase 10)
 docs/              Arquitectura, diccionario de datos, ADR, estándar, gobierno, runbook
 ```
 
@@ -85,7 +91,7 @@ Estados: ✅ ejecutado · 🚧 en curso · ⬜ pendiente · 📐 solo diseño
 |---|---|---|
 | 1 | Estructura, datos (simulador + Postgres), baseline ingenuo, pruebas de fuga | ✅ |
 | 2 | Entrenamiento con scikit-learn: pipelines, umbral, métricas para clases desbalanceadas | ✅ |
-| 3 | MLflow: tracking, registro, contrato, puerta de promoción, rollback | ⬜ |
+| 3 | MLflow: tracking, registro, contrato, puerta de promoción, rollback | ✅ |
 | 4 | Serving con FastAPI y Docker Compose | ⬜ |
 | 5 | Monitoreo, simulación de drift, reporte de incidente | ⬜ |
 | 6 | Feast (opcional y acotado), con criterios de cuándo no se justifica | ⬜ |
@@ -101,6 +107,7 @@ Estados: ✅ ejecutado · 🚧 en curso · ⬜ pendiente · 📐 solo diseño
 - [Simulador de tickets](docs/simulator.md)
 - [Resultados fase 1: baselines](docs/results/fase1_baseline_sla_risk.md)
 - [Resultados fase 2: entrenamiento](docs/results/fase2_entrenamiento_sla_risk.md)
+- [Resultados fase 3: ciclo de vida en MLflow](docs/results/fase3_ciclo_de_vida_sla_risk.md)
 - [Decisiones técnicas (ADR)](docs/adr/)
 - [Estándar de despliegue](docs/deployment_standard.md)
 - [Política de gobierno](docs/governance_policy.md)

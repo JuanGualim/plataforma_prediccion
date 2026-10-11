@@ -81,6 +81,22 @@ Historial de lo ocurrido a cada ticket hasta el snapshot. No se usa como feature
 | `event_type` | text | created, assigned, first_response, reassigned, resolved, closed |
 | `event_at` | timestamptz | Momento del evento; un evento es T0 solo si `event_at <= created_at` del ticket |
 
+## Tabla `governance.model_events` (fase 3)
+
+Bitácora de auditoría del ciclo de vida de los modelos. **Solo se agregan filas.**
+
+| Campo | Tipo | Significado |
+|---|---|---|
+| `event_id` | bigint | Identificador incremental (orden de los eventos) |
+| `model_name` | text | Modelo registrado (p. ej. `sla_risk`) |
+| `event_type` | text | `promoted`, `rejected` o `rolled_back` |
+| `from_version` | text | Champion antes del evento (NULL en la primera promoción) |
+| `to_version` | text | Versión candidata (promoción o rechazo) o destino del rollback |
+| `actor` | text | Usuario que ejecutó el comando |
+| `reason` | text | Motivo declarado (obligatorio en el rollback) |
+| `details` | jsonb | Chequeos de la puerta y métricas de la evaluación común |
+| `created_at` | timestamptz | Momento del evento |
+
 ## Tabla `monitoring.predictions` (fase 4, diseño)
 
 | Campo | Tipo | Significado |
