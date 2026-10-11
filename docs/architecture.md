@@ -1,6 +1,6 @@
 # Arquitectura
 
-> **Estado:** esqueleto (fase 1). Este documento crece con cada fase.
+> **Estado:** fase 1 completada. Este documento crece con cada fase.
 > Convención de honestidad: cada componente se marca como **Ejecutado** (corre y está
 > probado en este repositorio) o **Diseñado** (solo documentado; no se ha ejecutado).
 
@@ -27,11 +27,16 @@
 
 | Componente | Módulo | Fase | Estado |
 |---|---|---|---|
-| PostgreSQL (datos operativos) | `docker-compose.yml`, `infra/postgres` | 1 | Ejecutado (contenedor y esquemas `support`/`monitoring`; sin tablas aún) |
+| PostgreSQL (datos operativos) | `docker-compose.yml`, `infra/postgres`, `use_cases.sla_risk.storage` | 1 | Ejecutado (tablas `tickets` y `ticket_events`, carga con COPY) |
 | Configuración y logging | `mlplatform.config`, `mlplatform.logging_config` | 1 | Ejecutado |
 | Regla de dependencias plataforma → casos de uso | `tests/unit/test_architecture.py` | 1 | Ejecutado |
-| Simulador de tickets | `use_cases.sla_risk` | 1 | Pendiente |
-| Entrenamiento y evaluación | `mlplatform.training` | 2 | Pendiente |
+| Catálogo de campos y barrera contra fugas | `mlplatform.data.catalog`, `use_cases.sla_risk.fields` | 1 | Ejecutado |
+| Validación de datos | `mlplatform.data.validation` | 1 | Ejecutado |
+| Simulador de tickets | `use_cases.sla_risk.simulator` | 1 | Ejecutado |
+| Split temporal con madurez de etiquetas | `mlplatform.training.splits`, `use_cases.sla_risk.dataset` | 1 | Ejecutado |
+| Métricas y baselines | `mlplatform.training.metrics`, `mlplatform.training.baselines` | 1 | Ejecutado |
+| CI (lint + pruebas) | `.github/workflows/ci.yml` | 1 | Diseñado (no se ha ejecutado en GitHub) |
+| Entrenamiento con scikit-learn | `mlplatform.training`, `use_cases.sla_risk` | 2 | Pendiente |
 | Tracking y registry (MLflow + MinIO) | `mlplatform.registry` | 3 | Pendiente |
 | Contrato, puerta de promoción, rollback | `mlplatform.lifecycle` | 3 | Pendiente |
 | Serving | `mlplatform.serving` | 4 | Pendiente |
@@ -42,7 +47,13 @@
 
 ## Flujos principales
 
-_Por completar en cada fase:_
+1. **Datos (fase 1, ejecutado):** simulador → validación contra el catálogo → carga atómica en
+   `support.tickets` / `support.ticket_events` (`make data`).
+2. **Evaluación de baselines (fase 1, ejecutado):** lectura de Postgres → split temporal con fecha de
+   corte → filas con etiqueta conocida en el corte → `select_features` (barrera de fugas) →
+   baselines → reporte JSON (`make baseline`).
+
+_Por completar en las siguientes fases:_
 
 1. **Entrenamiento:** datos → split temporal → pipeline → evaluación → registro como candidato.
 2. **Promoción:** candidato → validación del contrato → comparación con champion → cambio de alias.

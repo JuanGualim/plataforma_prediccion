@@ -6,8 +6,8 @@ equipos de Data Science entrenen, registren, desplieguen, monitoreen y retiren m
 forma uniforme. Los modelos son sus "clientes" y sirven para probar que la plataforma funciona
 con casos de distinta naturaleza.
 
-> **Estado actual:** fase 1. Solo existe la base del proyecto; todavía no hay lógica de ML.
-> Ver la [hoja de ruta](#hoja-de-ruta).
+> **Estado actual:** fase 1 completada: datos sintéticos en PostgreSQL, barrera contra fugas de
+> información y baselines del modelo de SLA. Ver la [hoja de ruta](#hoja-de-ruta).
 
 ## El problema
 
@@ -50,10 +50,13 @@ semanas después. Esta plataforma propone un camino común:
 Requisitos: [uv](https://docs.astral.sh/uv/), Docker con Compose y `make`.
 
 ```bash
-make setup   # crea .env, instala Python 3.12 y las dependencias
-make test    # pruebas unitarias
-make up      # levanta PostgreSQL
-make help    # lista todos los comandos
+make setup             # crea .env, instala Python 3.12 y las dependencias
+make test              # pruebas unitarias (incluye las de fuga de información)
+make up                # levanta PostgreSQL (puerto 5433 en localhost)
+make data              # genera tickets sintéticos, los valida y los carga
+make baseline          # evalúa los baselines del modelo de SLA
+make test-integration  # pruebas contra PostgreSQL
+make help              # lista todos los comandos
 ```
 
 ## Estructura
@@ -78,7 +81,7 @@ Estados: ✅ ejecutado · 🚧 en curso · ⬜ pendiente · 📐 solo diseño
 
 | Fase | Contenido | Estado |
 |---|---|---|
-| 1 | Estructura, datos (simulador + Postgres), baseline ingenuo, pruebas de fuga | 🚧 |
+| 1 | Estructura, datos (simulador + Postgres), baseline ingenuo, pruebas de fuga | ✅ |
 | 2 | Entrenamiento con scikit-learn: pipelines, umbral, métricas para clases desbalanceadas | ⬜ |
 | 3 | MLflow: tracking, registro, contrato, puerta de promoción, rollback | ⬜ |
 | 4 | Serving con FastAPI y Docker Compose | ⬜ |
@@ -93,6 +96,8 @@ Estados: ✅ ejecutado · 🚧 en curso · ⬜ pendiente · 📐 solo diseño
 
 - [Arquitectura](docs/architecture.md)
 - [Diccionario de datos](docs/data_dictionary.md)
+- [Simulador de tickets](docs/simulator.md)
+- [Resultados fase 1: baselines](docs/results/fase1_baseline_sla_risk.md)
 - [Decisiones técnicas (ADR)](docs/adr/)
 - [Estándar de despliegue](docs/deployment_standard.md)
 - [Política de gobierno](docs/governance_policy.md)

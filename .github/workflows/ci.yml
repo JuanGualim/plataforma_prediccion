@@ -1,0 +1,32 @@
+# Integración continua: lint + pruebas unitarias + pruebas de integración con PostgreSQL.
+# Estado: Diseñado. Se ejecutará cuando el repositorio se publique en GitHub.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: support
+          POSTGRES_USER: mlplatform
+          POSTGRES_PASSWORD: mlplatform_local
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U mlplatform -d support"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: cp .env.example .env
+      - run: uv sync --locked
+      - run: make lint
+      - run: make test
+      - run: make test-integration
