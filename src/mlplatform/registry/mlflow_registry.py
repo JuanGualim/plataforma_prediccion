@@ -14,6 +14,7 @@ import os
 os.environ.setdefault("MLFLOW_DISABLE_TELEMETRY", "true")
 os.environ.setdefault("MLFLOW_ENABLE_PROXY_MULTIPART_DOWNLOAD", "false")
 os.environ.setdefault("MLFLOW_ENABLE_PROXY_MULTIPART_UPLOAD", "false")
+os.environ.setdefault("MLFLOW_DISABLE_AGENT_HINT", "1")  # sin mensajes promocionales en los logs
 
 import tempfile  # noqa: E402
 from dataclasses import dataclass, field  # noqa: E402

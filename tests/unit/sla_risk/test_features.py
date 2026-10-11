@@ -1,8 +1,9 @@
 import pandas as pd
 import pytest
+import skops.io
 
 from use_cases.sla_risk.dataset import select_features
-from use_cases.sla_risk.features import TIME_FEATURES, time_features
+from use_cases.sla_risk.features import SKOPS_TRUSTED_TYPES, TIME_FEATURES, time_features
 from use_cases.sla_risk.models import build_candidates
 
 
@@ -68,3 +69,14 @@ def test_raw_timestamp_never_reaches_the_model(fitted_logreg) -> None:
 
     assert "created_at" not in names
     assert set(TIME_FEATURES) <= set(names)
+
+
+def test_every_candidate_can_be_saved_in_the_safe_format(small_sim) -> None:
+    """MLflow guarda con skops: ningún candidato puede requerir tipos no autorizados."""
+    tickets = small_sim.tickets.dropna(subset=["sla_breached"])
+    X, y = select_features(tickets), tickets["sla_breached"].astype(int)
+
+    for candidate in build_candidates():
+        payload = skops.io.dumps(candidate.estimator.fit(X, y))
+        untrusted = set(skops.io.get_untrusted_types(data=payload))
+        assert untrusted <= set(SKOPS_TRUSTED_TYPES), (candidate.name, untrusted)

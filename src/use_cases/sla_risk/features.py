@@ -72,9 +72,14 @@ def build_preprocessor(scale_numeric: bool) -> ColumnTransformer:
     )
 
 
-# Funciones propias que viajan dentro del modelo guardado. skops (formato seguro de MLflow)
-# se niega a cargar código no declarado; esta lista blanca lo autoriza de forma explícita.
+# Tipos que skops (formato seguro de MLflow) no carga sin autorización explícita.
+# Cada entrada es una decisión revisada, no un "permitir todo":
+# - Nuestras funciones de features: código propio del repositorio.
+# - TreePredictor (gradient boosting): un archivo manipulado podría provocar lecturas de
+#   memoria fuera de rango al predecir. Se acepta porque los modelos los produce esta misma
+#   plataforma y solo se cargan desde el registry interno (esa es la frontera de confianza).
 SKOPS_TRUSTED_TYPES = [
     f"{__name__}.{time_features.__name__}",
     f"{__name__}.{_time_feature_names.__name__}",
+    "sklearn.ensemble._hist_gradient_boosting.predictor.TreePredictor",
 ]
