@@ -18,6 +18,7 @@ Todo modelo registrado debe incluir:
 | Referencia al dataset | Versión, hash o consulta, y rango de fechas usado | _Por definir_ |
 | Commit de git | Commit exacto del código que lo entrenó (sin cambios sin commitear) | _Por definir_ |
 | Dependencias fijadas | Versiones exactas (lockfile) | _Por definir_ |
+| Umbral de decisión | Valor, criterio (p. ej. costo FN/FP) y conjunto donde se eligió. El preprocesamiento viaja dentro del mismo artefacto | Implementado en fase 2 (`report.json`); se formaliza en fase 3 |
 
 ## 2. Estados y alias
 

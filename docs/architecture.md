@@ -1,6 +1,6 @@
 # Arquitectura
 
-> **Estado:** fase 1 completada. Este documento crece con cada fase.
+> **Estado:** fases 1 y 2 completadas. Este documento crece con cada fase.
 > Convención de honestidad: cada componente se marca como **Ejecutado** (corre y está
 > probado en este repositorio) o **Diseñado** (solo documentado; no se ha ejecutado).
 
@@ -33,10 +33,14 @@
 | Catálogo de campos y barrera contra fugas | `mlplatform.data.catalog`, `use_cases.sla_risk.fields` | 1 | Ejecutado |
 | Validación de datos | `mlplatform.data.validation` | 1 | Ejecutado |
 | Simulador de tickets | `use_cases.sla_risk.simulator` | 1 | Ejecutado |
-| Split temporal con madurez de etiquetas | `mlplatform.training.splits`, `use_cases.sla_risk.dataset` | 1 | Ejecutado |
+| Split temporal con madurez de etiquetas | `mlplatform.training.splits`, `use_cases.sla_risk.dataset` | 1 | Ejecutado (ampliado en fase 2) |
 | Métricas y baselines | `mlplatform.training.metrics`, `mlplatform.training.baselines` | 1 | Ejecutado |
 | CI (lint + pruebas) | `.github/workflows/ci.yml` | 1 | Diseñado (no se ha ejecutado en GitHub) |
-| Entrenamiento con scikit-learn | `mlplatform.training`, `use_cases.sla_risk` | 2 | Pendiente |
+| Split temporal train / validation / test | `use_cases.sla_risk.dataset` | 2 | Ejecutado |
+| Pipelines de scikit-learn (preprocesamiento dentro del artefacto) | `use_cases.sla_risk.features`, `.models` | 2 | Ejecutado |
+| Selección de candidatos y umbral por costo | `mlplatform.training.selection`, `.thresholds` | 2 | Ejecutado |
+| Calibración, segmentos e importancia por permutación | `mlplatform.training.metrics`, `use_cases.sla_risk.train` | 2 | Ejecutado |
+| Trazabilidad (commit + entorno) del entrenamiento | `mlplatform.training.lineage` | 2 | Ejecutado (en JSON; MLflow en la fase 3) |
 | Tracking y registry (MLflow + MinIO) | `mlplatform.registry` | 3 | Pendiente |
 | Contrato, puerta de promoción, rollback | `mlplatform.lifecycle` | 3 | Pendiente |
 | Serving | `mlplatform.serving` | 4 | Pendiente |
@@ -53,9 +57,13 @@
    corte → filas con etiqueta conocida en el corte → `select_features` (barrera de fugas) →
    baselines → reporte JSON (`make baseline`).
 
+3. **Entrenamiento (fase 2, ejecutado):** lectura de Postgres → train / validation / test temporales
+   → candidatos (pipelines) entrenados en train → selección en validation → umbral por costo en
+   validation → evaluación única en test contra el baseline → `model.joblib` + `report.json` (`make train`).
+
 _Por completar en las siguientes fases:_
 
-1. **Entrenamiento:** datos → split temporal → pipeline → evaluación → registro como candidato.
+1. **Registro:** el resultado del entrenamiento se registra en MLflow como candidato.
 2. **Promoción:** candidato → validación del contrato → comparación con champion → cambio de alias.
 3. **Predicción:** request → validación de esquema → modelo champion → respuesta con versión → log de predicción.
 4. **Retroalimentación:** llega la etiqueta real → unión con la predicción → métricas del modelo.

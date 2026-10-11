@@ -59,6 +59,17 @@ Una fila por ticket, tal como se ve en el momento del snapshot (`as_of`).
 Al construir el dataset de entrenamiento con una fecha de corte, solo entran tickets cuyo
 resultado **ya se conocía en esa fecha** (`label_known_at` en `use_cases/sla_risk/dataset.py`).
 
+## Entradas del modelo de SLA (fase 2)
+
+El modelo recibe solo estas columnas crudas (`FEATURES` en `fields.py`), todas T0 o T0\*. El
+pipeline (`use_cases/sla_risk/features.py`) las transforma así:
+
+| Columna cruda | Transformación dentro del pipeline |
+|---|---|
+| `channel`, `category`, `priority`, `customer_tier`, `product` | One-hot; una categoría nunca vista se codifica como "ninguna" (no rompe la predicción) |
+| `sla_hours`, `open_tickets_in_queue` | Estandarizadas (regresión logística) o sin cambio (boosting) |
+| `created_at` | Se derivan `hour_sin`, `hour_cos`, `weekday_sin`, `weekday_cos`, `is_weekend` e `is_off_hours` en hora de Bogotá. **La fecha absoluta nunca llega al modelo** |
+
 ## Tabla `support.ticket_events`
 
 Historial de lo ocurrido a cada ticket hasta el snapshot. No se usa como feature en la fase 1.

@@ -1,5 +1,9 @@
 # Fase 1: baselines del modelo de riesgo de SLA
 
+> **Nota (fase 2):** este registro usó una partición en dos conjuntos (entrenamiento/prueba). Desde la
+> fase 2, `make baseline` usa entrenamiento/validación/prueba, y la cifra vigente del baseline
+> `priority_x_tier` en prueba es PR-AUC 0,292 (ver [fase 2](fase2_entrenamiento_sla_risk.md)).
+
 > **Estado:** Ejecutado el 2026-10-10 con `make data && make baseline` (semilla 42, configuración
 > por defecto del simulador). Reporte completo: `data/reports/sla_risk_baseline.json` (no versionado; se regenera).
 > **Datos sintéticos:** estos números muestran que el flujo funciona y fijan la vara para la

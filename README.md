@@ -6,8 +6,9 @@ equipos de Data Science entrenen, registren, desplieguen, monitoreen y retiren m
 forma uniforme. Los modelos son sus "clientes" y sirven para probar que la plataforma funciona
 con casos de distinta naturaleza.
 
-> **Estado actual:** fase 1 completada: datos sintéticos en PostgreSQL, barrera contra fugas de
-> información y baselines del modelo de SLA. Ver la [hoja de ruta](#hoja-de-ruta).
+> **Estado actual:** fases 1 y 2 completadas. Hay datos sintéticos en PostgreSQL, una barrera contra
+> fugas de información y un modelo de SLA entrenado: regresión logística con PR-AUC 0,432 en prueba,
+> frente a 0,292 del baseline. Ver la [hoja de ruta](#hoja-de-ruta).
 
 ## El problema
 
@@ -55,6 +56,7 @@ make test              # pruebas unitarias (incluye las de fuga de información)
 make up                # levanta PostgreSQL (puerto 5433 en localhost)
 make data              # genera tickets sintéticos, los valida y los carga
 make baseline          # evalúa los baselines del modelo de SLA
+make train             # entrena, elige modelo y umbral, evalúa en prueba
 make test-integration  # pruebas contra PostgreSQL
 make help              # lista todos los comandos
 ```
@@ -82,7 +84,7 @@ Estados: ✅ ejecutado · 🚧 en curso · ⬜ pendiente · 📐 solo diseño
 | Fase | Contenido | Estado |
 |---|---|---|
 | 1 | Estructura, datos (simulador + Postgres), baseline ingenuo, pruebas de fuga | ✅ |
-| 2 | Entrenamiento con scikit-learn: pipelines, umbral, métricas para clases desbalanceadas | ⬜ |
+| 2 | Entrenamiento con scikit-learn: pipelines, umbral, métricas para clases desbalanceadas | ✅ |
 | 3 | MLflow: tracking, registro, contrato, puerta de promoción, rollback | ⬜ |
 | 4 | Serving con FastAPI y Docker Compose | ⬜ |
 | 5 | Monitoreo, simulación de drift, reporte de incidente | ⬜ |
@@ -98,6 +100,7 @@ Estados: ✅ ejecutado · 🚧 en curso · ⬜ pendiente · 📐 solo diseño
 - [Diccionario de datos](docs/data_dictionary.md)
 - [Simulador de tickets](docs/simulator.md)
 - [Resultados fase 1: baselines](docs/results/fase1_baseline_sla_risk.md)
+- [Resultados fase 2: entrenamiento](docs/results/fase2_entrenamiento_sla_risk.md)
 - [Decisiones técnicas (ADR)](docs/adr/)
 - [Estándar de despliegue](docs/deployment_standard.md)
 - [Política de gobierno](docs/governance_policy.md)
