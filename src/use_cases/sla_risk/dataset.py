@@ -1,11 +1,20 @@
-"""Construcción del dataset de entrenamiento y evaluación del modelo de SLA.
+"""Construcción de los conjuntos de entrenamiento, validación y prueba del modelo de SLA.
+
+Línea de tiempo (backtest):
+
+    |------------ train ------------|---- validation ----|------ test ------|
+                              validation_cutoff      test_cutoff        snapshot
+
+- train: se entrena "como si hoy fuera validation_cutoff".
+- validation: elige modelo y umbral "como si hoy fuera test_cutoff".
+- test: se mira UNA vez, al final, con el modelo y el umbral ya decididos.
 
 Dos protecciones contra "ver el futuro":
 
 1. Columnas: solo entran las FEATURES, validadas contra el catálogo (T0 / T0*).
-2. Filas: un ticket solo entra al entrenamiento si su resultado ya se conocía en la fecha
-   de corte. Un ticket creado el día anterior al corte y resuelto una semana después NO
-   tenía etiqueta en ese momento; usarlo sería entrenar con información del periodo de prueba.
+2. Filas: cada conjunto solo usa tickets cuyo resultado ya se conocía en el momento en que
+   ese conjunto "se usa". Un ticket creado el día antes del corte y resuelto una semana
+   después NO tenía etiqueta en el corte; usarlo sería aprender del periodo siguiente.
 """
 
 import logging
@@ -20,15 +29,24 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class TrainTestData:
-    X_train: pd.DataFrame
-    y_train: pd.Series
-    X_test: pd.DataFrame
-    y_test: pd.Series
-    train_rows: pd.DataFrame  # filas completas, solo para análisis (nunca para el modelo)
-    test_rows: pd.DataFrame
-    cutoff: pd.Timestamp
-    excluded_immature: int  # tickets previos al corte sin etiqueta conocida en el corte
+class Split:
+    rows: pd.DataFrame  # filas completas, solo para análisis (nunca para el modelo)
+    X: pd.DataFrame
+    y: pd.Series
+
+    @classmethod
+    def from_rows(cls, rows: pd.DataFrame) -> "Split":
+        return cls(rows=rows, X=select_features(rows), y=rows[TARGET].astype(int))
+
+
+@dataclass(frozen=True)
+class DatasetSplits:
+    train: Split
+    validation: Split
+    test: Split
+    validation_cutoff: pd.Timestamp
+    test_cutoff: pd.Timestamp
+    excluded: dict[str, int]  # filas descartadas por etiqueta aún desconocida, por conjunto
 
 
 def select_features(df: pd.DataFrame) -> pd.DataFrame:
@@ -48,37 +66,51 @@ def label_known_at(tickets: pd.DataFrame, moment: pd.Timestamp) -> pd.Series:
     return resolved | (deadline <= moment)
 
 
-def default_cutoff(tickets: pd.DataFrame, test_days: int) -> pd.Timestamp:
-    """Start of the day `test_days` before the most recent ticket."""
-    return (tickets["created_at"].max() - pd.Timedelta(days=test_days)).normalize()
+def default_cutoffs(
+    tickets: pd.DataFrame, validation_days: int = 30, test_days: int = 30
+) -> tuple[pd.Timestamp, pd.Timestamp]:
+    """(validation_cutoff, test_cutoff) counted back from the most recent ticket's day."""
+    last_day = tickets["created_at"].max().normalize()
+    test_cutoff = last_day - pd.Timedelta(days=test_days - 1)
+    return test_cutoff - pd.Timedelta(days=validation_days), test_cutoff
 
 
-def build_train_test(tickets: pd.DataFrame, cutoff: pd.Timestamp) -> TrainTestData:
-    train_pool, test_pool = temporal_split(tickets, "created_at", cutoff)
+def build_splits(
+    tickets: pd.DataFrame, validation_cutoff: pd.Timestamp, test_cutoff: pd.Timestamp
+) -> DatasetSplits:
+    if not validation_cutoff < test_cutoff:
+        raise ValueError("validation_cutoff must be earlier than test_cutoff")
 
-    mature = label_known_at(train_pool, cutoff)
-    train = train_pool[mature]
-    # En evaluación se usan las etiquetas conocidas en el snapshot; las pendientes se excluyen.
-    test = test_pool[test_pool[TARGET].notna()]
+    train_pool, rest = temporal_split(tickets, "created_at", validation_cutoff)
+    validation_pool, test_pool = temporal_split(rest, "created_at", test_cutoff)
 
-    if train[TARGET].isna().any():
-        raise AssertionError("A ticket with a label known at cutoff has a missing label")
+    train = train_pool[label_known_at(train_pool, validation_cutoff)]
+    validation = validation_pool[label_known_at(validation_pool, test_cutoff)]
+    test = test_pool[test_pool[TARGET].notna()]  # etiquetas conocidas en el snapshot
 
+    for name, frame in (("train", train), ("validation", validation)):
+        if frame[TARGET].isna().any():
+            raise AssertionError(f"{name}: a ticket with a known outcome has a missing label")
+
+    excluded = {
+        "train": len(train_pool) - len(train),
+        "validation": len(validation_pool) - len(validation),
+        "test": len(test_pool) - len(test),
+    }
     logger.info(
-        "split cutoff=%s train=%d (excluded %d immature) test=%d (excluded %d unlabeled)",
-        cutoff.date(),
+        "splits validation_cutoff=%s test_cutoff=%s train=%d validation=%d test=%d excluded=%s",
+        validation_cutoff.date(),
+        test_cutoff.date(),
         len(train),
-        int((~mature).sum()),
+        len(validation),
         len(test),
-        len(test_pool) - len(test),
+        excluded,
     )
-    return TrainTestData(
-        X_train=select_features(train),
-        y_train=train[TARGET].astype(int),
-        X_test=select_features(test),
-        y_test=test[TARGET].astype(int),
-        train_rows=train,
-        test_rows=test,
-        cutoff=cutoff,
-        excluded_immature=int((~mature).sum()),
+    return DatasetSplits(
+        train=Split.from_rows(train),
+        validation=Split.from_rows(validation),
+        test=Split.from_rows(test),
+        validation_cutoff=validation_cutoff,
+        test_cutoff=test_cutoff,
+        excluded=excluded,
     )

@@ -13,7 +13,7 @@ import pytest
 
 from mlplatform.data.catalog import FEATURE_SAFE, LeakageError
 from use_cases.sla_risk import dataset
-from use_cases.sla_risk.dataset import build_train_test, default_cutoff, label_known_at
+from use_cases.sla_risk.dataset import build_splits, default_cutoffs, label_known_at
 from use_cases.sla_risk.fields import FEATURES, TARGET, TICKETS
 
 DATA_DICTIONARY = Path(__file__).resolve().parents[3] / "docs" / "data_dictionary.md"
@@ -53,18 +53,30 @@ def test_data_dictionary_matches_catalog() -> None:
     assert documented == in_code
 
 
-def test_training_rows_only_use_outcomes_known_at_cutoff(small_sim) -> None:
+def test_each_split_only_uses_outcomes_known_when_it_is_used(small_sim) -> None:
     tickets = small_sim.tickets
-    cutoff = default_cutoff(tickets, test_days=7)
+    validation_cutoff, test_cutoff = default_cutoffs(tickets, validation_days=7, test_days=7)
 
-    data = build_train_test(tickets, cutoff)
+    splits = build_splits(tickets, validation_cutoff, test_cutoff)
 
-    train = data.train_rows
-    assert train["created_at"].max() < cutoff <= data.test_rows["created_at"].min()
-    assert label_known_at(train, cutoff).all()
-    # Existían tickets previos al corte con resultado aún abierto, y quedaron fuera.
-    assert data.excluded_immature > 0
-    assert list(data.X_train.columns) == FEATURES
+    train, validation, test = (s.rows for s in (splits.train, splits.validation, splits.test))
+    assert train["created_at"].max() < validation_cutoff <= validation["created_at"].min()
+    assert validation["created_at"].max() < test_cutoff <= test["created_at"].min()
+    # train se usa en validation_cutoff; validation se usa en test_cutoff.
+    assert label_known_at(train, validation_cutoff).all()
+    assert label_known_at(validation, test_cutoff).all()
+    assert test["sla_breached"].notna().all()
+    # Había tickets cerca de cada corte con resultado aún abierto, y quedaron fuera.
+    assert splits.excluded["train"] > 0
+    assert splits.excluded["validation"] > 0
+    for split in (splits.train, splits.validation, splits.test):
+        assert list(split.X.columns) == FEATURES
+
+
+def test_cutoffs_must_be_ordered(small_sim) -> None:
+    validation_cutoff, test_cutoff = default_cutoffs(small_sim.tickets, 7, 7)
+    with pytest.raises(ValueError, match="earlier"):
+        build_splits(small_sim.tickets, test_cutoff, validation_cutoff)
 
 
 def test_label_known_at_examples() -> None:
