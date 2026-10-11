@@ -48,6 +48,8 @@ class DecisionThreshold(BaseModel):
     value: float = Field(gt=0, lt=1)
     criterion: str
     chosen_on: Literal["validation"]
+    # Costos de negocio usados para elegirlo (p. ej. {"false_positive": 1, "false_negative": 5}).
+    costs: dict[str, float] = {}
 
 
 class CodeVersion(BaseModel):

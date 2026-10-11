@@ -1,10 +1,8 @@
 import json
 
-import joblib
 import pytest
 
-from use_cases.sla_risk.dataset import build_splits, default_cutoffs
-from use_cases.sla_risk.train import TrainingConfig, save_run, train
+from use_cases.sla_risk.train import TrainingConfig, train
 
 SMALL_TRAINING = TrainingConfig(validation_days=7, test_days=7, permutation_repeats=2)
 
@@ -49,13 +47,17 @@ def test_training_is_reproducible(small_sim, outcome) -> None:
     assert stable(again.report) == stable(outcome.report)
 
 
-def test_saved_run_reproduces_predictions(tmp_path, small_sim, outcome) -> None:
-    run_dir = save_run(outcome, tmp_path)
+def test_candidates_can_be_restricted_by_name(small_sim) -> None:
+    config = TrainingConfig(
+        validation_days=7, test_days=7, permutation_repeats=1, candidate_names=("logreg",)
+    )
 
-    artifact = joblib.load(run_dir / "model.joblib")
-    splits = build_splits(small_sim.tickets, *default_cutoffs(small_sim.tickets, 7, 7))
-    X = splits.test.X
+    outcome = train(small_sim.tickets, config)
 
-    assert artifact["threshold"] == outcome.threshold
-    assert (artifact["model"].predict_proba(X)[:, 1] == outcome.model.predict_proba(X)[:, 1]).all()
-    assert json.loads((run_dir / "report.json").read_text())["use_case"] == "sla_risk"
+    assert [c["name"] for c in outcome.report["candidates_validation"]] == ["logreg"]
+
+
+def test_unknown_candidate_name_fails_fast(small_sim) -> None:
+    config = TrainingConfig(validation_days=7, test_days=7, candidate_names=("nope",))
+    with pytest.raises(ValueError, match="no candidate"):
+        train(small_sim.tickets, config)

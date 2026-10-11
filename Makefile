@@ -1,7 +1,7 @@
 # Punto de entrada único para operar el proyecto. `make help` lista los comandos.
 .DEFAULT_GOAL := help
 .PHONY: help env setup up down logs psql db-reset lint format test test-integration \
-        data baseline train promote rollback serve clean
+        data baseline train promote rollback models serve clean
 
 UV ?= uv
 
@@ -49,20 +49,25 @@ test-integration: ## Pruebas de integración (requieren `make up`)
 	$(UV) run pytest -m integration
 
 # --- Ciclo de vida del modelo --------------------------------------------------
-data: ## [Fase 1] Genera tickets sintéticos, los valida y los carga en Postgres (requiere `make up`)
-	$(UV) run python -m use_cases.sla_risk.simulate
+data: ## [Fase 1] Genera tickets sintéticos y los carga en Postgres (ARGS="--days 210 --as-of ...")
+	$(UV) run python -m use_cases.sla_risk.simulate $(ARGS)
 
 baseline: ## [Fase 1] Evalúa los baselines del modelo de SLA (requiere `make data`)
 	$(UV) run python -m use_cases.sla_risk.run_baseline
 
-train: ## [Fase 2] Entrena, selecciona y evalúa el modelo de SLA (requiere `make data`)
-	$(UV) run python -m use_cases.sla_risk.train
+train: ## [Fase 2-3] Entrena, evalúa y registra un candidato en MLflow (ARGS="--candidates ...")
+	$(UV) run python -m use_cases.sla_risk.train $(ARGS)
 
-promote: ## [Fase 3] Evalúa un candidato contra el champion y lo promueve si pasa la puerta
-	@echo "Pendiente (fase 3): puerta de promoción"
+promote: ## [Fase 3] Pasa un candidato por la puerta de promoción (VERSION=n, REASON="...")
+	$(UV) run python -m use_cases.sla_risk.registry_cli promote \
+		$(if $(VERSION),--version $(VERSION)) $(if $(REASON),--reason "$(REASON)")
 
-rollback: ## [Fase 3] Devuelve el alias champion a la versión anterior
-	@echo "Pendiente (fase 3): rollback"
+rollback: ## [Fase 3] Devuelve champion a la versión anterior (REASON="..." obligatorio)
+	@test -n "$(REASON)" || (echo 'Falta el motivo: make rollback REASON="..."' && exit 1)
+	$(UV) run python -m use_cases.sla_risk.registry_cli rollback --reason "$(REASON)"
+
+models: ## [Fase 3] Muestra versiones, champion y últimos eventos del registry
+	$(UV) run python -m use_cases.sla_risk.registry_cli status
 
 serve: ## [Fase 4] Levanta la API de predicción
 	@echo "Pendiente (fase 4): serving con FastAPI"

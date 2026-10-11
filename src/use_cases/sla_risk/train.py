@@ -1,6 +1,6 @@
 """CLI: entrena, selecciona y evalúa el modelo de riesgo de SLA.
 
-    uv run python -m use_cases.sla_risk.train [--cost-fp 1] [--cost-fn 5]
+    uv run python -m use_cases.sla_risk.train [--cost-fp 1] [--cost-fn 5] [--candidates a,b]
 
 Flujo (cada decisión se toma con el conjunto que corresponde):
 
@@ -9,24 +9,22 @@ Flujo (cada decisión se toma con el conjunto que corresponde):
 3. Selección: el más simple dentro de una tolerancia del mejor.
 4. Umbral: el que minimiza el costo esperado en validation.
 5. Test se usa UNA vez, con modelo y umbral ya fijos, junto al baseline de referencia.
-6. Se guardan el pipeline entrenado y un reporte con trazabilidad (fase 3: MLflow).
+6. Se registra en MLflow como versión candidata, con su contrato de despliegue
+   (use_cases.sla_risk.registration). Pasar a champion requiere la puerta de promoción.
 """
 
 import argparse
-import json
 import logging
-import math
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
-import joblib
 import pandas as pd
 from sklearn.inspection import permutation_importance
 
 from mlplatform.data.db import get_engine
 from mlplatform.logging_config import configure_logging
+from mlplatform.serialization import to_jsonable
 from mlplatform.training.baselines import GroupRateClassifier
 from mlplatform.training.lineage import environment_info, git_info
 from mlplatform.training.metrics import (
@@ -46,7 +44,6 @@ from use_cases.sla_risk.models import build_candidates
 from use_cases.sla_risk.storage import read_tickets
 
 logger = logging.getLogger(__name__)
-DEFAULT_RUNS_DIR = Path("data/runs/sla_risk")
 SEGMENT_COLUMNS = ["customer_tier", "priority", "channel"]
 
 
@@ -62,6 +59,8 @@ class TrainingConfig:
     cost_false_negative: float = 5.0
     random_state: int = 42
     permutation_repeats: int = 5
+    # Restringe los candidatos por nombre (None = todos). Útil para experimentos dirigidos.
+    candidate_names: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -80,9 +79,12 @@ def train(tickets: pd.DataFrame, config: TrainingConfig | None = None) -> Traini
     train_set, val, test = splits.train, splits.validation, splits.test
 
     # 2-3. Candidatos y selección (solo validation).
-    results = evaluate_candidates(
-        build_candidates(config.random_state), train_set.X, train_set.y, val.X, val.y
-    )
+    candidates = build_candidates(config.random_state)
+    if config.candidate_names:
+        candidates = [c for c in candidates if c.name in config.candidate_names]
+        if not candidates:
+            raise ValueError(f"no candidate matches {config.candidate_names}")
+    results = evaluate_candidates(candidates, train_set.X, train_set.y, val.X, val.y)
     selected = select_candidate(results, config.selection_metric, config.selection_tolerance)
     model = selected.model
 
@@ -181,30 +183,7 @@ def train(tickets: pd.DataFrame, config: TrainingConfig | None = None) -> Traini
         ),
         "lineage": {"git": git_info(), "environment": environment_info()},
     }
-    return TrainingOutcome(model=model, threshold=threshold, report=_jsonable(report))
-
-
-def save_run(outcome: TrainingOutcome, runs_dir: Path = DEFAULT_RUNS_DIR) -> Path:
-    """Persist the fitted pipeline and its report in a new timestamped directory."""
-    run_dir = runs_dir / datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    run_dir.mkdir(parents=True, exist_ok=False)
-    # joblib (pickle) solo debe cargarse desde fuentes confiables: puede ejecutar código.
-    joblib.dump({"model": outcome.model, "threshold": outcome.threshold}, run_dir / "model.joblib")
-    (run_dir / "report.json").write_text(json.dumps(outcome.report, indent=2), encoding="utf-8")
-    return run_dir
-
-
-def _jsonable(value: Any) -> Any:
-    """Recursively convert to JSON-safe values (NaN -> None, numpy scalars -> Python)."""
-    if isinstance(value, dict):
-        return {str(k): _jsonable(v) for k, v in value.items()}
-    if isinstance(value, list | tuple):
-        return [_jsonable(v) for v in value]
-    if hasattr(value, "item"):  # escalares numpy
-        value = value.item()
-    if isinstance(value, float) and math.isnan(value):
-        return None
-    return value
+    return TrainingOutcome(model=model, threshold=threshold, report=to_jsonable(report))
 
 
 def _log_summary(report: dict) -> None:
@@ -240,13 +219,16 @@ def _log_summary(report: dict) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    # Import diferido: registrar requiere MLflow; entrenar (train()) no.
+    from use_cases.sla_risk.registration import register_candidate
+
     defaults = TrainingConfig()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--validation-days", type=int, default=defaults.validation_days)
     parser.add_argument("--test-days", type=int, default=defaults.test_days)
     parser.add_argument("--cost-fp", type=float, default=defaults.cost_false_positive)
     parser.add_argument("--cost-fn", type=float, default=defaults.cost_false_negative)
-    parser.add_argument("--runs-dir", type=Path, default=DEFAULT_RUNS_DIR)
+    parser.add_argument("--candidates", help="comma-separated candidate names (default: all)")
     args = parser.parse_args(argv)
 
     configure_logging()
@@ -255,11 +237,20 @@ def main(argv: list[str] | None = None) -> None:
         test_days=args.test_days,
         cost_false_positive=args.cost_fp,
         cost_false_negative=args.cost_fn,
+        candidate_names=tuple(args.candidates.split(",")) if args.candidates else None,
     )
-    outcome = train(read_tickets(get_engine()), config)
+    tickets = read_tickets(get_engine())
+    outcome = train(tickets, config)
     _log_summary(outcome.report)
-    run_dir = save_run(outcome, args.runs_dir)
-    logger.info("run saved to %s", run_dir)
+    registered = register_candidate(outcome, tickets)
+    logger.info(
+        "registered %s version %s (run %s) as candidate; contract violations: %s",
+        registered.model_name,
+        registered.version,
+        registered.run_id,
+        registered.violations or "none",
+    )
+    logger.info("next step: make promote VERSION=%s", registered.version)
 
 
 if __name__ == "__main__":

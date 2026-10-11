@@ -4,6 +4,7 @@ Es el embrión del contrato de despliegue (fase 3): un modelo sin commit conocid
 puede reproducir ni auditar.
 """
 
+import hashlib
 import platform
 import subprocess
 from importlib.metadata import version
@@ -32,3 +33,8 @@ def environment_info(packages: tuple[str, ...] = ("scikit-learn", "pandas", "num
         "python": platform.python_version(),
         **{name: version(name) for name in packages},
     }
+
+
+def lockfile_sha256(path: Path = Path("uv.lock")) -> str:
+    """Hash of the dependency lockfile: same hash = exactly the same pinned dependencies."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()

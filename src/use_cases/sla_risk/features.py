@@ -70,3 +70,11 @@ def build_preprocessor(scale_numeric: bool) -> ColumnTransformer:
         remainder="drop",
         verbose_feature_names_out=False,
     )
+
+
+# Funciones propias que viajan dentro del modelo guardado. skops (formato seguro de MLflow)
+# se niega a cargar código no declarado; esta lista blanca lo autoriza de forma explícita.
+SKOPS_TRUSTED_TYPES = [
+    f"{__name__}.{time_features.__name__}",
+    f"{__name__}.{_time_feature_names.__name__}",
+]
