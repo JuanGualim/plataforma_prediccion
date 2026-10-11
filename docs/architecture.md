@@ -1,6 +1,6 @@
 # Arquitectura
 
-> **Estado:** fases 1 a 3 completadas. Este documento crece con cada fase.
+> **Estado:** fases 1 a 4 completadas. Este documento crece con cada fase.
 > Convención de honestidad: cada componente se marca como **Ejecutado** (corre y está
 > probado en este repositorio) o **Diseñado** (solo documentado; no se ha ejecutado).
 
@@ -45,7 +45,11 @@
 | Contrato de despliegue y model card | `mlplatform.lifecycle.contract`, `use_cases.sla_risk.contract`, `.model_card` | 3 | Ejecutado |
 | Puerta de promoción y rollback | `mlplatform.lifecycle.promotion`, `.service`, `use_cases.sla_risk.registry_cli` | 3 | Ejecutado |
 | Bitácora de auditoría | `mlplatform.registry.event_log` (`governance.model_events`) | 3 | Ejecutado |
-| Serving | `mlplatform.serving` | 4 | Pendiente |
+| Serving genérico (FastAPI: /health, /ready, /metadata, /predict) | `mlplatform.serving.app`, `.models` | 4 | Ejecutado |
+| Serving del modelo de SLA (esquema de entrada) | `use_cases.sla_risk.serving` | 4 | Ejecutado |
+| Recarga del champion sin reiniciar | `mlplatform.serving.models.ModelHolder` | 4 | Ejecutado (0 errores en promoción + rollback con tráfico) |
+| Registro de predicciones | `mlplatform.serving.prediction_log` (`monitoring.predictions`) | 4 | Ejecutado |
+| Imagen de serving y servicio en Compose | `infra/serving/Dockerfile`, `docker-compose.yml` | 4 | Ejecutado |
 | Monitoreo | `mlplatform.monitoring` | 5 | Pendiente |
 | Feature store (Feast) | — | 6 | Pendiente (opcional) |
 | Kubernetes local (kind) | `infra/k8s` | 10 | Pendiente |
@@ -69,10 +73,13 @@
    misma ventana → puerta → alias `champion` + tags + evento en `governance.model_events`.
 6. **Rollback (fase 3, ejecutado):** `make rollback REASON=...` → alias a la versión anterior + evento.
 
+7. **Predicción (fase 4, ejecutado):** request → validación pydantic (esquema = firma del contrato) →
+   modelo `@champion` en memoria → respuesta con versión y umbral → registro en `monitoring.predictions`
+   después de responder. El servicio consulta el alias cada 15 s y cambia de versión sin reiniciar.
+
 _Por completar en las siguientes fases:_
 
-1. **Predicción:** request → validación de esquema → modelo `@champion` → respuesta con versión → log de predicción.
-2. **Retroalimentación:** llega la etiqueta real → unión con la predicción → métricas del modelo.
+1. **Retroalimentación:** llega la etiqueta real → unión con la predicción → métricas del modelo.
 
 ## Decisiones
 

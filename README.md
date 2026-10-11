@@ -6,10 +6,11 @@ equipos de Data Science entrenen, registren, desplieguen, monitoreen y retiren m
 forma uniforme. Los modelos son sus "clientes" y sirven para probar que la plataforma funciona
 con casos de distinta naturaleza.
 
-> **Estado actual:** fases 1 a 3 completadas.
+> **Estado actual:** fases 1 a 4 completadas.
 > - Datos sintéticos en PostgreSQL, con una barrera contra fugas de información.
 > - Modelo de SLA entrenado y registrado en MLflow con su contrato de despliegue.
 > - Puerta de promoción, rollback en un comando y bitácora de auditoría.
+> - API de predicción en Docker que sigue al champion sin reiniciarse y registra cada predicción.
 >
 > Ver la [hoja de ruta](#hoja-de-ruta).
 
@@ -56,13 +57,16 @@ Requisitos: [uv](https://docs.astral.sh/uv/), Docker con Compose y `make`.
 ```bash
 make setup             # crea .env, instala Python 3.12 y las dependencias
 make test              # pruebas unitarias (incluye las de fuga de información)
-make up                # levanta PostgreSQL (5433), MLflow (http://localhost:5000) y SeaweedFS
+make up                # levanta PostgreSQL (5433), MLflow (:5000), SeaweedFS y la API (:8000)
 make data              # genera tickets sintéticos, los valida y los carga
 make baseline          # evalúa los baselines del modelo de SLA
 make train             # entrena, elige modelo y umbral, y registra un candidato en MLflow
 make promote           # pasa el último candidato por la puerta de promoción
 make rollback REASON="..."  # devuelve champion a la versión anterior
 make models            # versiones, champion y bitácora de eventos
+make serve             # construye y levanta la API; espera a que esté lista
+make predict-example   # envía dos tickets de ejemplo a la API
+make latency           # mide la latencia de /predict
 make test-integration  # pruebas contra PostgreSQL
 make help              # lista todos los comandos
 ```
@@ -75,11 +79,11 @@ src/mlplatform/    La plataforma (genérica; nunca importa de use_cases)
   training/        Splits temporales, métricas, selección de umbral
   registry/        Adaptadores: MLflow y bitácora de auditoría (mecanismo)
   lifecycle/       Contrato, puerta de promoción, rollback (política)
-  serving/         API FastAPI genérica
+  serving/         API FastAPI genérica, recarga del champion, registro de predicciones
   monitoring/      Monitoreo de servicio, datos y modelo
 src/use_cases/     Modelos cliente: sla_risk, ticket_routing, support_rag
 tests/             unit/ (sin servicios) e integration/ (con docker compose)
-infra/             Postgres, imagen de MLflow; manifiestos de Kubernetes (fase 10)
+infra/             Postgres, imágenes de MLflow y serving; manifiestos de Kubernetes (fase 10)
 docs/              Arquitectura, diccionario de datos, ADR, estándar, gobierno, runbook
 ```
 
@@ -92,7 +96,7 @@ Estados: ✅ ejecutado · 🚧 en curso · ⬜ pendiente · 📐 solo diseño
 | 1 | Estructura, datos (simulador + Postgres), baseline ingenuo, pruebas de fuga | ✅ |
 | 2 | Entrenamiento con scikit-learn: pipelines, umbral, métricas para clases desbalanceadas | ✅ |
 | 3 | MLflow: tracking, registro, contrato, puerta de promoción, rollback | ✅ |
-| 4 | Serving con FastAPI y Docker Compose | ⬜ |
+| 4 | Serving con FastAPI y Docker Compose | ✅ |
 | 5 | Monitoreo, simulación de drift, reporte de incidente | ⬜ |
 | 6 | Feast (opcional y acotado), con criterios de cuándo no se justifica | ⬜ |
 | 7 | Clasificador de texto con PyTorch y Hugging Face | ⬜ |
@@ -108,6 +112,7 @@ Estados: ✅ ejecutado · 🚧 en curso · ⬜ pendiente · 📐 solo diseño
 - [Resultados fase 1: baselines](docs/results/fase1_baseline_sla_risk.md)
 - [Resultados fase 2: entrenamiento](docs/results/fase2_entrenamiento_sla_risk.md)
 - [Resultados fase 3: ciclo de vida en MLflow](docs/results/fase3_ciclo_de_vida_sla_risk.md)
+- [Resultados fase 4: serving](docs/results/fase4_serving_sla_risk.md)
 - [Decisiones técnicas (ADR)](docs/adr/)
 - [Estándar de despliegue](docs/deployment_standard.md)
 - [Política de gobierno](docs/governance_policy.md)

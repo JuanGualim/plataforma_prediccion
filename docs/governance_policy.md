@@ -1,6 +1,7 @@
 # Política de gobierno de modelos de ML y GenAI
 
-> **Estado:** parcial. Las secciones 2, 3 y 6 se implementaron en la fase 3. El resto se completa en las fases 5 y 8.
+> **Estado:** parcial. Secciones 2, 3 y 6 implementadas en la fase 3; logs de predicción (4) en la fase 4.
+> El resto se completa en las fases 5 y 8.
 > Es una política breve y aplicable, no un documento legal.
 
 ## 1. Alcance
@@ -28,7 +29,11 @@ texto) y aplicaciones con LLM (RAG).
 
 - **Datos de entrenamiento:** _por definir_.
 - **Prompts y contexto enviados a LLM:** _por definir (fase 8): enmascarado de información personal antes de enviar el texto, qué proveedores están permitidos._
-- **Logs:** _por definir: qué se guarda de cada request y qué no, y cuánto tiempo se retiene._
+- **Logs de predicción (fase 4):** se guardan las 8 entradas del modelo, el puntaje, la decisión y la
+  versión. **No** se guardan el texto libre del ticket (`subject`, `description`, que pueden contener
+  datos personales) ni otros campos: la API rechaza cualquier campo no declarado. El `ticket_id` se
+  guarda solo para unir con el resultado real. El tráfico de prueba se marca como `synthetic`.
+  _Retención: por definir (fase 5)._
 
 ## 5. Monitoreo obligatorio
 

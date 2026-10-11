@@ -97,13 +97,20 @@ Bitácora de auditoría del ciclo de vida de los modelos. **Solo se agregan fila
 | `details` | jsonb | Chequeos de la puerta y métricas de la evaluación común |
 | `created_at` | timestamptz | Momento del evento |
 
-## Tabla `monitoring.predictions` (fase 4, diseño)
+## Tabla `monitoring.predictions` (fase 4)
+
+Una fila por predicción servida por la API. La escribe el serving en segundo plano.
 
 | Campo | Tipo | Significado |
 |---|---|---|
 | `prediction_id` | uuid | Identificador de la predicción |
-| `ticket_id` | uuid | Ticket evaluado |
+| `request_id` | text | Petición HTTP que la originó (header `X-Request-ID`); un lote comparte el mismo |
+| `entity_id` | text | `ticket_id` enviado por el cliente (opcional; no es una feature) |
 | `model_name` / `model_version` | text | Modelo y versión que respondió |
 | `score` | float | Probabilidad de incumplir el SLA |
-| `decision` | bool | `score >= umbral` vigente |
+| `decision` | bool | `score >= threshold` |
+| `threshold` | float | Umbral vigente de esa versión (del contrato) |
+| `features` | jsonb | Entradas recibidas (las 8 columnas T0/T0\*; sin texto libre ni identificadores) |
 | `predicted_at` | timestamptz | Momento de la predicción |
+| `latency_ms` | float | Tiempo de tabla + pipeline, por instancia (la latencia HTTP completa va en el log de la API) |
+| `traffic_source` | text | `live` o `synthetic` (pruebas, ejemplos, carga). **El monitoreo debe usar solo `live`** |

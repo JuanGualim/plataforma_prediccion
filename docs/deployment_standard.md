@@ -1,7 +1,8 @@
 # Estándar de despliegue
 
-> **Estado:** Ejecutado (fase 3). Implementado en `mlplatform.lifecycle` (política) y
-> `mlplatform.registry` (MLflow y bitácora). Probado con dobles en memoria y contra MLflow real.
+> **Estado:** Ejecutado (fases 3 y 4). Implementado en `mlplatform.lifecycle` (política),
+> `mlplatform.registry` (MLflow y bitácora) y `mlplatform.serving` (API). Probado con dobles en memoria y
+> contra el stack real.
 
 Este documento define qué debe cumplir **cualquier** modelo para desplegarse en la plataforma, sin
 importar el equipo ni el tipo de modelo.
@@ -34,7 +35,7 @@ se registra (queda trazado, con el tag `contract_violations`), pero **no puede p
 | `archived` | Fue champion y lo reemplazó otra versión aprobada |
 | `rolled_back` | Fue champion y se revirtió por un incidente |
 
-El serving (fase 4) cargará siempre `models:/<modelo>@champion`.
+El serving carga siempre `models:/<modelo>@champion` (sección 6).
 
 ## 3. Puerta de promoción (`make promote`)
 
@@ -64,8 +65,21 @@ Cada promoción, rechazo y rollback se agrega a `governance.model_events` (Postg
 con actor, motivo, versiones de origen y destino, y la evaluación completa en JSON. `make models`
 muestra las versiones y los últimos eventos.
 
-## 6. Serving (fase 4, diseño)
+## 6. Serving (fase 4)
 
-- Endpoints obligatorios: `/predict`, `/health`, `/ready`, `/metadata`.
-- Toda respuesta de `/predict` incluye `model_name` y `model_version`.
-- El umbral se lee del contrato de la versión champion.
+Todo modelo se sirve con `mlplatform.serving` (ver [ADR 0008](adr/0008-serving-generico-con-fastapi.md)):
+
+| Endpoint | Contrato |
+|---|---|
+| `GET /health` | 200 si el proceso vive (liveness) |
+| `GET /ready` | 200 con la versión cargada; 503 con el motivo si no hay modelo (readiness) |
+| `GET /metadata` | Versión, umbral, firma, métricas de prueba, commit y huella del dataset |
+| `POST /predict` | Lote de 1 a `SERVING_MAX_BATCH` instancias; la respuesta incluye `model_name`, `model_version`, `threshold` y `request_id` |
+
+Reglas:
+- Se sirve siempre `models:/<modelo>@champion`. Un cambio de alias se aplica sin reiniciar (consulta
+  cada `SERVING_REFRESH_SECONDS`).
+- El esquema de la API debe coincidir con la firma del contrato. Si no, el servicio **no carga** ese modelo.
+- El umbral se lee del contrato de la versión servida, nunca del código del servicio.
+- Toda predicción se registra en `monitoring.predictions`. El tráfico de prueba debe enviar
+  `X-Traffic-Source: synthetic`.

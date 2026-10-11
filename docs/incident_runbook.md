@@ -1,7 +1,7 @@
 # Runbook de incidentes
 
-> **Estado:** parcial. El rollback (sección D) se ejecutó en la fase 3. El resto se completa en la fase 5
-> con el monitoreo y un incidente simulado de principio a fin.
+> **Estado:** parcial. Rollback (D) ejecutado en la fase 3; caída del servicio (A) y almacenamiento
+> lleno (E) con comandos reales de la fase 4. Drift (B, C) se completa en la fase 5.
 
 ## Severidades
 
@@ -13,16 +13,27 @@
 
 ## Primeros pasos (cualquier incidente)
 
-1. ¿Qué versión está sirviendo? → `make models` (alias `champion`); en la fase 4, también `/metadata`
+1. ¿Qué versión está sirviendo? → `curl localhost:8000/metadata` y `make models` (alias `champion`)
 2. ¿Cambió algo recientemente? → `make models` muestra los últimos eventos de `governance.model_events`
 3. ¿Es un problema del servicio, de los datos o del modelo? → paneles de monitoreo
 
 ## Escenarios
 
-### A. Caída o latencia alta del servicio
-- Síntomas: _por definir_
-- Diagnóstico: _por definir_
-- Mitigación: _por definir_
+### A. El servicio no responde, no está listo o está lento
+- **Síntomas:** errores 5xx o *timeouts* en los clientes; `/ready` responde 503; latencia alta en el log.
+- **Diagnóstico:**
+  1. `docker compose ps`: ¿`mlplatform-serving` está `healthy`? Si no, el proceso cayó: revisar
+     `docker logs mlplatform-serving`.
+  2. `curl localhost:8000/ready`: si es 503, el campo `reason` dice por qué. Casos vistos:
+     - *"no champion registered yet"*: nadie ha promovido un modelo → `make promote`.
+     - *"Invalid Host header"*: MLflow rechaza el nombre del servicio → revisar `MLFLOW_ALLOWED_HOSTS`.
+     - *"cannot load version N"*: el artefacto no se puede leer → ver escenario E.
+     - *"contract inputs … do not match"*: se promovió un modelo con otra firma → rollback.
+  3. Latencia: el log JSON de la API trae `latency_ms` por petición; `make latency` da una referencia
+     (p50 ~32 ms con 2 tickets en la laptop de desarrollo).
+- **Mitigación:** si el servicio sigue respondiendo con la versión anterior (`last_refresh_error` en
+  `/metadata`), no hay impacto inmediato: corregir la causa y esperar la siguiente consulta. Si el
+  problema empezó con una promoción, hacer rollback (D).
 
 ### B. Data drift (cambia la distribución de las entradas)
 - Síntomas: _por definir_
@@ -48,6 +59,16 @@
   revirtió una vez. Opciones: promover explícitamente otra versión aprobada con `make promote
   VERSION=<n>` (pasará por la puerta) o escalar.
 - **Después:** post-mortem y, si aplica, corregir el candidato y volver a pasar por la puerta.
+
+### E. Almacenamiento de artefactos sin espacio (visto en la fase 4)
+- **Síntomas:** `make train` falla con errores 500 de MLflow al subir artefactos; el log de
+  `mlplatform-seaweedfs` dice *"No writable volumes and no free volumes left"*.
+- **Diagnóstico:** `df -h /` en el host (en el incidente: 100 % usado, 948 MB libres) y `docker system df`.
+- **Mitigación:** liberar espacio (imágenes y volúmenes de Docker sin uso, cachés). SeaweedFS vuelve a
+  aceptar escrituras sin reiniciarse. Revisar si quedaron restos de la ejecución fallida (runs y
+  modelos `sla_test_*` en MLflow, esquemas `gov_*` en Postgres).
+- **Impacto en producción:** el serving **no** se ve afectado mientras no deba cargar una versión nueva.
+  El modelo ya cargado vive en memoria.
 
 ## Plantilla de post-mortem
 
