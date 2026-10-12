@@ -61,3 +61,24 @@ def test_unknown_candidate_name_fails_fast(small_sim) -> None:
     config = TrainingConfig(validation_days=7, test_days=7, candidate_names=("nope",))
     with pytest.raises(ValueError, match="no candidate"):
         train(small_sim.tickets, config)
+
+
+def test_train_days_limits_history_before_the_validation_cutoff(small_sim) -> None:
+    config = TrainingConfig(
+        validation_days=7,
+        test_days=7,
+        permutation_repeats=1,
+        candidate_names=("logreg",),
+        train_days=7,
+    )
+
+    report = train(small_sim.tickets, config).report
+
+    full = train(
+        small_sim.tickets,
+        TrainingConfig(
+            validation_days=7, test_days=7, permutation_repeats=1, candidate_names=("logreg",)
+        ),
+    ).report
+    assert report["data"]["n"]["train"] < full["data"]["n"]["train"]
+    assert report["data"]["n"]["test"] == full["data"]["n"]["test"]

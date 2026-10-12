@@ -62,6 +62,9 @@ class TrainingConfig:
     permutation_repeats: int = 5
     # Restringe los candidatos por nombre (None = todos). Útil para experimentos dirigidos.
     candidate_names: tuple[str, ...] | None = None
+    # Días de historia para entrenar antes del corte de validación (None = toda la historia).
+    # Tras un cambio en el mundo (drift), los datos viejos describen reglas que ya no aplican.
+    train_days: int | None = None
 
 
 @dataclass(frozen=True)
@@ -74,9 +77,13 @@ class TrainingOutcome:
 def train(tickets: pd.DataFrame, config: TrainingConfig | None = None) -> TrainingOutcome:
     config = config or TrainingConfig()
     cost_fp, cost_fn = config.cost_false_positive, config.cost_false_negative
-    splits = build_splits(
-        tickets, *default_cutoffs(tickets, config.validation_days, config.test_days)
+    validation_cutoff, test_cutoff = default_cutoffs(
+        tickets, config.validation_days, config.test_days
     )
+    if config.train_days is not None:
+        oldest = validation_cutoff - pd.Timedelta(days=config.train_days)
+        tickets = tickets[tickets["created_at"] >= oldest]
+    splits = build_splits(tickets, validation_cutoff, test_cutoff)
     train_set, val, test = splits.train, splits.validation, splits.test
 
     # 2-3. Candidatos y selección (solo validation).
@@ -238,6 +245,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--cost-fp", type=float, default=defaults.cost_false_positive)
     parser.add_argument("--cost-fn", type=float, default=defaults.cost_false_negative)
     parser.add_argument("--candidates", help="comma-separated candidate names (default: all)")
+    parser.add_argument("--train-days", type=int, help="history used for training (default: all)")
     args = parser.parse_args(argv)
 
     configure_logging()
@@ -247,6 +255,7 @@ def main(argv: list[str] | None = None) -> None:
         cost_false_positive=args.cost_fp,
         cost_false_negative=args.cost_fn,
         candidate_names=tuple(args.candidates.split(",")) if args.candidates else None,
+        train_days=args.train_days,
     )
     tickets = read_tickets(get_engine())
     outcome = train(tickets, config)
