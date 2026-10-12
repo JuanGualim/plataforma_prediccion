@@ -68,7 +68,7 @@ def app_factory() -> FastAPI:
     # Imports diferidos: MLflow y la base de datos solo se necesitan en el servicio real.
     from mlplatform.data.db import get_engine
     from mlplatform.registry.mlflow_registry import MlflowModelRegistry
-    from mlplatform.serving.prediction_log import PostgresPredictionLog
+    from mlplatform.serving.prediction_log import PostgresPredictionLog, PostgresRequestLog
 
     configure_logging()
     settings = get_settings()
@@ -76,6 +76,7 @@ def app_factory() -> FastAPI:
         SPEC,
         source=RegistryModelSource(MlflowModelRegistry(), MODEL_NAME),
         prediction_log=PostgresPredictionLog(get_engine()),
+        request_log=PostgresRequestLog(get_engine()),
         refresh_seconds=settings.serving_refresh_seconds,
         max_batch=settings.serving_max_batch,
     )

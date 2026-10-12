@@ -1,8 +1,9 @@
-"""Registro de cada predicción servida (base del monitoreo de la fase 5).
+"""Registros del serving, base del monitoreo (fase 5).
 
-Se guardan las entradas, el score, la decisión y la versión del modelo. Cuando llegue el
-resultado real, se cruzará con esta tabla para medir el desempeño en producción, y las
-entradas permiten detectar cambios en los datos (drift).
+- `monitoring.predictions`: una fila por predicción (entradas, puntaje, decisión, versión). Se
+  cruza con el resultado real para medir desempeño, y sus entradas permiten detectar drift.
+- `monitoring.requests`: una fila por llamada a /predict, también las fallidas (estado HTTP y
+  latencia completa). Es la fuente del monitoreo del servicio.
 """
 
 import logging
@@ -83,3 +84,47 @@ class PostgresPredictionLog:
                 )
         except Exception:
             logger.exception("could not write %d prediction records", len(records))
+
+
+@dataclass(frozen=True)
+class RequestRecord:
+    request_id: str
+    path: str
+    status: int
+    latency_ms: float
+    model_version: str | None
+    traffic_source: str
+    requested_at: str
+
+
+class RequestLog(Protocol):
+    def write(self, records: list[RequestRecord]) -> None: ...
+
+
+class PostgresRequestLog:
+    def __init__(self, engine: Engine, schema: str = SCHEMA) -> None:
+        self.engine = engine
+        self.metadata = sa.MetaData(schema=schema)
+        self.table = sa.Table(
+            "requests",
+            self.metadata,
+            sa.Column("request_id", sa.Text, nullable=False),
+            sa.Column("path", sa.Text, nullable=False),
+            sa.Column("status", sa.Integer, nullable=False),
+            sa.Column("latency_ms", sa.Float, nullable=False),
+            sa.Column("model_version", sa.Text),
+            sa.Column("traffic_source", sa.Text, nullable=False),
+            sa.Column("requested_at", sa.DateTime(timezone=True), nullable=False, index=True),
+        )
+        with engine.begin() as conn:
+            conn.execute(sa.schema.CreateSchema(schema, if_not_exists=True))
+            self.metadata.create_all(conn)
+
+    def write(self, records: list[RequestRecord]) -> None:
+        if not records:
+            return
+        try:
+            with self.engine.begin() as conn:
+                conn.execute(self.table.insert(), [r.__dict__ for r in records])
+        except Exception:
+            logger.exception("could not write %d request records", len(records))

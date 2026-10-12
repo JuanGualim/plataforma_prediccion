@@ -69,7 +69,7 @@ def setup(trained):
     source = FakeSource({"1": model, "2": model}, contract)
     source.champion = "1"
     log = FakeLog()
-    app = create_app(SPEC, source, log, refresh_seconds=0, max_batch=5)
+    app = create_app(SPEC, source, log, FakeLog(), refresh_seconds=0, max_batch=5)
     with TestClient(app) as client:
         yield client, source, log, app.state.holder
 
@@ -213,3 +213,20 @@ def test_api_schema_matches_model_features() -> None:
     fields = set(TicketAtCreation.model_fields) - {"ticket_id"}
 
     assert fields == set(FEATURES)
+
+
+def test_every_predict_call_is_recorded_for_service_monitoring(trained) -> None:
+    model, contract = trained
+    source = FakeSource({"1": model}, contract)
+    source.champion = "1"
+    requests_log = FakeLog()
+    app = create_app(SPEC, source, None, requests_log, refresh_seconds=0)
+
+    with TestClient(app) as client:
+        client.post("/predict", json={"instances": [ticket()]})
+        client.post("/predict", json={"instances": [ticket(sla_hours=0)]})  # 422
+        client.get("/health")  # no es una predicción: no se registra
+        app.state.requests_buffer.flush()
+
+    assert [(r.status, r.model_version) for r in requests_log.records] == [(200, "1"), (422, None)]
+    assert all(r.latency_ms > 0 for r in requests_log.records)

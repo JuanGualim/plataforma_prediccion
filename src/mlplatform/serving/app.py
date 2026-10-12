@@ -9,11 +9,13 @@ pone lo común a todos los modelos:
 - /predict -> puntúa un lote; la respuesta SIEMPRE dice qué modelo y versión respondió.
 
 Además: identificador de petición (X-Request-ID), log estructurado con latencia de cada
-petición, registro de predicciones en segundo plano y recarga del champion sin reiniciar.
+petición, registro de predicciones y de peticiones (para el monitoreo) y recarga del champion
+sin reiniciar.
 """
 
 import asyncio
 import logging
+import threading
 import time
 import uuid
 from collections.abc import Callable
@@ -29,10 +31,39 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, create_model
 
 from mlplatform.serving.models import ModelHolder, ModelSource
-from mlplatform.serving.prediction_log import PredictionLog, PredictionRecord
+from mlplatform.serving.prediction_log import (
+    PredictionLog,
+    PredictionRecord,
+    RequestLog,
+    RequestRecord,
+)
 
 logger = logging.getLogger(__name__)
 SYNTHETIC = "synthetic"
+REQUEST_LOG_FLUSH_SECONDS = 5
+
+
+class RequestBuffer:
+    """Collects request records in memory and writes them in batches.
+
+    Escribir cada petición por separado sumaría un viaje a la base de datos por llamada; en lote
+    cada pocos segundos el costo es mínimo. Si el proceso cae se pierden, como mucho, los
+    últimos segundos de registros.
+    """
+
+    def __init__(self, log: RequestLog) -> None:
+        self.log = log
+        self._records: list[RequestRecord] = []
+        self._lock = threading.Lock()
+
+    def add(self, record: RequestRecord) -> None:
+        with self._lock:
+            self._records.append(record)
+
+    def flush(self) -> None:
+        with self._lock:
+            records, self._records = self._records, []
+        self.log.write(records)
 
 
 @dataclass(frozen=True)
@@ -63,10 +94,12 @@ def create_app(
     spec: ServingSpec,
     source: ModelSource,
     prediction_log: PredictionLog | None = None,
+    request_log: RequestLog | None = None,
     refresh_seconds: int = 30,
     max_batch: int = 100,
 ) -> FastAPI:
     holder = ModelHolder(source, spec.feature_columns)
+    requests_buffer = RequestBuffer(request_log) if request_log is not None else None
     non_features = {spec.entity_id_field} if spec.entity_id_field else None
 
     predict_request = create_model(
@@ -82,16 +115,28 @@ def create_app(
             await asyncio.sleep(refresh_seconds)
             await asyncio.to_thread(holder.refresh)
 
+    async def flush_forever() -> None:
+        while True:
+            await asyncio.sleep(REQUEST_LOG_FLUSH_SECONDS)
+            await asyncio.to_thread(requests_buffer.flush)
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         await asyncio.to_thread(holder.refresh)
-        task = asyncio.create_task(refresh_forever()) if refresh_seconds > 0 else None
+        tasks = []
+        if refresh_seconds > 0:
+            tasks.append(asyncio.create_task(refresh_forever()))
+        if requests_buffer is not None:
+            tasks.append(asyncio.create_task(flush_forever()))
         yield
-        if task:
+        for task in tasks:
             task.cancel()
+        if requests_buffer is not None:
+            requests_buffer.flush()  # no perder los últimos registros al apagar
 
     app = FastAPI(title=f"Serving: {spec.model_name}", lifespan=lifespan)
     app.state.holder = holder
+    app.state.requests_buffer = requests_buffer
 
     @app.middleware("http")
     async def request_context(request: Request, call_next):
@@ -104,6 +149,18 @@ def create_app(
         response = await call_next(request)
         elapsed_ms = (time.perf_counter() - start) * 1000
         response.headers["x-request-id"] = request_id
+        if requests_buffer is not None and request.url.path == "/predict":
+            requests_buffer.add(
+                RequestRecord(
+                    request_id=request_id,
+                    path=request.url.path,
+                    status=response.status_code,
+                    latency_ms=elapsed_ms,
+                    model_version=getattr(request.state, "model_version", None),
+                    traffic_source=request.state.traffic_source,
+                    requested_at=datetime.now(UTC).isoformat(),
+                )
+            )
         logger.info(
             "request",
             extra={
@@ -161,6 +218,7 @@ def create_app(
         bundle = holder.bundle  # una sola lectura: toda la petición usa la misma versión
         if bundle is None:
             raise HTTPException(503, detail=holder.last_error or "model not loaded")
+        request.state.model_version = bundle.version
 
         start = time.perf_counter()
         frame = spec.to_frame(body.instances)[spec.feature_columns]
