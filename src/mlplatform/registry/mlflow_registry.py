@@ -121,13 +121,19 @@ class MlflowModelRegistry:
     def set_version_tag(self, model_name: str, version: str, key: str, value: str) -> None:
         self.client.set_model_version_tag(model_name, version, key, value)
 
-    def get_contract(self, model_name: str, version: str) -> DeploymentContract:
+    def get_artifact_text(self, model_name: str, version: str, artifact_path: str) -> str:
+        """A text artifact logged in the training run of a registered version."""
         run_id = self.client.get_model_version(model_name, version).run_id
         with tempfile.TemporaryDirectory() as tmp:
             path = mlflow.artifacts.download_artifacts(
-                run_id=run_id, artifact_path=CONTRACT_ARTIFACT, dst_path=tmp
+                run_id=run_id, artifact_path=artifact_path, dst_path=tmp
             )
-            return DeploymentContract.model_validate_json(Path(path).read_text(encoding="utf-8"))
+            return Path(path).read_text(encoding="utf-8")
+
+    def get_contract(self, model_name: str, version: str) -> DeploymentContract:
+        return DeploymentContract.model_validate_json(
+            self.get_artifact_text(model_name, version, CONTRACT_ARTIFACT)
+        )
 
     def load_model(self, model_name: str, version: str) -> Any:
         return mlflow.sklearn.load_model(f"models:/{model_name}/{version}")

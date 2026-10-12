@@ -41,6 +41,7 @@ from mlplatform.training.thresholds import (
 from use_cases.sla_risk.dataset import build_splits, default_cutoffs
 from use_cases.sla_risk.fields import FEATURES, TARGET
 from use_cases.sla_risk.models import build_candidates
+from use_cases.sla_risk.monitoring import reference_profile
 from use_cases.sla_risk.storage import read_tickets
 
 logger = logging.getLogger(__name__)
@@ -182,6 +183,14 @@ def train(tickets: pd.DataFrame, config: TrainingConfig | None = None) -> Traini
             )
         ),
         "lineage": {"git": git_info(), "environment": environment_info()},
+        # Perfil de referencia para el monitoreo: distribuciones en la ventana de prueba (que
+        # el modelo no usó para aprender ni para elegir umbral) y categorías vistas al entrenar.
+        "reference_profile": reference_profile(
+            test.rows,
+            test_scores,
+            train_set.rows,
+            description=f"test window from {splits.test_cutoff.date()}",
+        ).model_dump(),
     }
     return TrainingOutcome(model=model, threshold=threshold, report=to_jsonable(report))
 

@@ -11,6 +11,7 @@ from mlplatform.registry.mlflow_registry import ChildRun, TrainingRunRecord, log
 from use_cases.sla_risk.contract import MODEL_NAME, build_contract
 from use_cases.sla_risk.dataset import select_features
 from use_cases.sla_risk.features import SKOPS_TRUSTED_TYPES
+from use_cases.sla_risk.monitoring import REFERENCE_PROFILE_ARTIFACT
 from use_cases.sla_risk.train import TrainingOutcome
 
 EXPERIMENT = "sla_risk"
@@ -69,6 +70,7 @@ def register_candidate(
         text_artifacts={
             "report.json": json.dumps(report, indent=2),
             "model_card.md": contract.model_card,
+            REFERENCE_PROFILE_ARTIFACT: json.dumps(report["reference_profile"], indent=2),
         },
         contract=contract,
         run_tags={

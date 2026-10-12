@@ -2,7 +2,7 @@
 .DEFAULT_GOAL := help
 .PHONY: help env setup up down logs psql db-reset lint format test test-integration \
         data baseline train promote rollback models serve serve-dev predict-example \
-        latency clean
+        latency replay monitor clean
 
 UV ?= uv
 
@@ -90,6 +90,13 @@ predict-example: ## [Fase 4] Envía dos tickets de ejemplo a la API
 latency: ## [Fase 4] Mide la latencia de /predict (300 peticiones secuenciales)
 	$(UV) run python -m mlplatform.serving.latency_probe --url $(SERVING_URL) \
 		--payload $(EXAMPLE_REQUEST) $(ARGS)
+
+# --- Monitoreo (fase 5) --------------------------------------------------------
+replay: ## [Fase 5] Simula el tráfico de producción hacia la API (ARGS="--from ... --to ... <mundo>")
+	$(UV) run python -m use_cases.sla_risk.replay $(ARGS)
+
+monitor: ## [Fase 5] Reporte de monitoreo en tres niveles (ARGS="--from ... --to ...")
+	$(UV) run python -m use_cases.sla_risk.monitor $(ARGS)
 
 # --- Limpieza ----------------------------------------------------------------
 clean: ## Borra cachés locales (no toca datos ni volúmenes)
