@@ -1,9 +1,11 @@
+from datetime import date
+
 import numpy as np
 import pandas as pd
 import pytest
 
 from use_cases.sla_risk.simulate import validate_simulation
-from use_cases.sla_risk.simulator import SimulationConfig, simulate
+from use_cases.sla_risk.simulator import BUSINESS_TZ, DriftScenario, SimulationConfig, simulate
 
 
 def test_same_seed_same_data(small_sim, small_config) -> None:
@@ -67,3 +69,39 @@ def test_queue_feature_is_point_in_time(small_sim, n_rows: int) -> None:
     expected = [int(((created < created[i]) & (resolved > created[i])).sum()) for i in sample]
 
     assert t["open_tickets_in_queue"].iloc[sample].tolist() == expected
+
+
+def test_the_past_does_not_depend_on_the_future() -> None:
+    """Simular más días no cambia los días ya simulados: el tiempo "avanza" en el mismo mundo."""
+    short = simulate(SimulationConfig(days=30, tickets_per_day=40))
+    longer = simulate(
+        SimulationConfig(
+            days=50, tickets_per_day=40, as_of=pd.Timestamp("2025-02-05", tz=BUSINESS_TZ)
+        )
+    )
+
+    pd.testing.assert_frame_equal(short.tickets, longer.tickets)
+    pd.testing.assert_frame_equal(short.events, longer.events)
+
+
+def test_drift_only_changes_the_world_after_it_starts() -> None:
+    base = SimulationConfig(days=60, tickets_per_day=80)
+    drift_start = date(2025, 2, 5)
+    drifted = simulate(
+        SimulationConfig(days=60, tickets_per_day=80, drift=DriftScenario(drift_start, 60))
+    ).tickets
+    normal = simulate(base).tickets
+    cut = pd.Timestamp(drift_start, tz=BUSINESS_TZ)
+
+    before = normal["created_at"] < cut
+    t0_columns = ["ticket_id", "created_at", "channel", "priority", "open_tickets_in_queue"]
+    pd.testing.assert_frame_equal(drifted.loc[before, t0_columns], normal.loc[before, t0_columns])
+    after = ~before
+    assert (
+        drifted.loc[after, "open_tickets_in_queue"].mean()
+        > normal.loc[after, "open_tickets_in_queue"].mean() * 1.2
+    )
+    assert (
+        drifted.loc[after, "sla_breached"].dropna().mean()
+        > normal.loc[after, "sla_breached"].dropna().mean()
+    )

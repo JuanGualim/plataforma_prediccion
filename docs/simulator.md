@@ -11,6 +11,9 @@ El simulador inventa un área de soporte con **reglas explícitas**. Eso permite
 - Controlar la línea de tiempo de cada ticket, y con ello probar que el modelo no "ve el futuro".
 - Provocar cambios a propósito (drift) en la fase 5 para probar el monitoreo.
 - Reproducir exactamente los mismos datos: misma configuración y misma semilla, mismos datos.
+- **Hacer avanzar el tiempo en el mismo mundo** (desde la fase 5). Cada día tiene su propio generador
+  aleatorio con semilla `[seed, día]`, así que simular 300 días produce exactamente los mismos primeros
+  210 días que simular 210. Con `--as-of` se toma una "foto" en cualquier momento.
 
 **Limitación honesta:** un modelo entrenado con estos datos aprende las reglas de este archivo.
 Sus métricas prueban que la plataforma funciona, no que el modelo serviría en una empresa real.
@@ -27,9 +30,10 @@ Sus métricas prueban que la plataforma funciona, no que el modelo serviría en 
 | `misroute_rate` | 15 % | Tickets en los que el cliente declara mal la categoría |
 | `queue_capacity` | 110 | Tickets abiertos que el equipo maneja sin degradarse |
 | `as_of` | fin del periodo | Momento del snapshot: solo se registra lo ocurrido hasta aquí |
+| `drift` | ninguno | Escenario de cambio desde una fecha (ver sección 5) |
 
-Resultado con la configuración por defecto: **18.792 tickets, 103.653 eventos, 14,9 % de
-incumplimiento** y 94 tickets con resultado aún desconocido en el snapshot.
+Resultado con la configuración por defecto: **18.738 tickets, 103.376 eventos y 14,9 % de
+incumplimiento**.
 
 ## Reglas del mundo simulado
 
@@ -79,6 +83,31 @@ Cada ticket genera: `created` → `assigned` → `first_response` → `reassigne
 Solo se registran los eventos ocurridos hasta `as_of`; los campos T+ de la tabla de tickets reflejan
 ese mismo instante. La etiqueta `sla_breached` puede ser `NULL` si el resultado aún no se conoce
 (ver [diccionario de datos](data_dictionary.md)).
+
+### 5. Escenarios de drift (fase 5)
+`DriftScenario(start, queue_capacity)`: desde `start`, el equipo maneja menos tickets sin degradarse
+("pérdida de personal"). Nada anterior a `start` cambia (lo verifica una prueba).
+
+| Escenario de la fase 5 | Antes del 15 ago | Semanas 1-4 | Semanas 5-8 | Semanas 9-11 |
+|---|---|---|---|---|
+| Capacidad 110 → **85** desde el 2025-08-15: incumplimiento | 14,9 % | 24,2 % | 27,8 % | 29,5 % |
+| Mediana de la cola (`open_tickets_in_queue`) | 106 | 130 | 154 | 157 |
+
+Este cambio genera a la vez **data drift** (la cola crece) y **concept drift** (con la misma cola,
+ahora se incumple más, porque la capacidad es menor).
+
+```bash
+make data ARGS="--days 300 --drift-start 2025-08-15 --drift-capacity 85 --as-of 2025-08-01"
+```
+
+## Historial de versiones del simulador
+
+| Versión | Commit | Cambio | Efecto en las cifras documentadas |
+|---|---|---|---|
+| 1 | fases 1-4 (hasta `9629e1d`) | Un único generador aleatorio para todo el periodo | Las cifras de las fases 1 a 4 provienen de esta versión |
+| 2 | fase 5 | Un generador por día, ids de eventos deterministas y escenarios de drift | Mismas reglas y mismas leyes de probabilidad, pero otra muestra: los números cambian levemente (p. ej., 18.738 tickets en vez de 18.792; el incumplimiento sigue en 14,9 %) |
+
+Para reproducir exactamente una cifra de una fase anterior, hay que usar el commit de esa fase.
 
 ## Qué no modela (a propósito)
 - Agentes individuales, turnos o vacaciones.

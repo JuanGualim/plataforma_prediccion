@@ -14,6 +14,7 @@ from mlplatform.logging_config import configure_logging
 from use_cases.sla_risk.quality import validate_tickets
 from use_cases.sla_risk.simulator import (
     BUSINESS_TZ,
+    DriftScenario,
     SimulationConfig,
     SimulationResult,
     simulate,
@@ -45,23 +46,37 @@ def main(argv: list[str] | None = None) -> None:
         "--as-of",
         help="snapshot moment (e.g. 2025-07-05); simulates that time has passed up to here",
     )
+    parser.add_argument("--drift-start", help="date the world changes (e.g. 2025-08-15)")
+    parser.add_argument(
+        "--drift-capacity", type=float, help="queue capacity from --drift-start on (staff cut)"
+    )
     parser.add_argument("--dry-run", action="store_true", help="simulate and validate only")
     args = parser.parse_args(argv)
 
     configure_logging()
     as_of = pd.Timestamp(args.as_of, tz=BUSINESS_TZ) if args.as_of else None
+    drift = (
+        DriftScenario(pd.Timestamp(args.drift_start).date(), queue_capacity=args.drift_capacity)
+        if args.drift_start
+        else None
+    )
     config = SimulationConfig(
-        days=args.days, tickets_per_day=args.tickets_per_day, seed=args.seed, as_of=as_of
+        days=args.days,
+        tickets_per_day=args.tickets_per_day,
+        seed=args.seed,
+        as_of=as_of,
+        drift=drift,
     )
     result = simulate(config)
     validate_simulation(result).raise_if_failed()
 
     labels = result.tickets["sla_breached"]
     logger.info(
-        "simulated tickets=%d events=%d as_of=%s breach_rate=%.3f unknown_labels=%d",
+        "simulated tickets=%d events=%d as_of=%s drift=%s breach_rate=%.3f unknown_labels=%d",
         len(result.tickets),
         len(result.events),
         result.as_of,
+        drift,
         labels.dropna().astype(float).mean(),
         int(labels.isna().sum()),
     )

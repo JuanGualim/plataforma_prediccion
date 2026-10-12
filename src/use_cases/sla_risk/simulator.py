@@ -1,7 +1,10 @@
 """Simulador de tickets de soporte: el "mundo" del que aprende el modelo de SLA.
 
-Las reglas están documentadas en docs/simulator.md. Todo el azar sale de un único
-generador con semilla: misma configuración y misma semilla producen exactamente los mismos datos.
+Las reglas están documentadas en docs/simulator.md.
+
+Reproducibilidad: cada día usa su propio generador aleatorio, con semilla `[seed, día]`. Así
+el pasado no depende del futuro: simular 270 días produce exactamente los mismos primeros
+210 días que simular 210. Es lo que permite simular "el paso del tiempo" en un mismo mundo.
 
 Internamente el tiempo se maneja en segundos enteros desde el inicio de la simulación,
 para que las comparaciones "antes/después" sean exactas (sin errores de redondeo).
@@ -111,6 +114,14 @@ PII_PROBABILITY = 0.2  # fracción de descripciones con datos personales (fictic
 
 
 @dataclass(frozen=True)
+class DriftScenario:
+    """A change in the world from `start` on (phase 5). Nothing before `start` changes."""
+
+    start: date
+    queue_capacity: float | None = None  # p. ej. el equipo pierde personal
+
+
+@dataclass(frozen=True)
 class SimulationConfig:
     start: date = date(2025, 1, 6)
     days: int = 180
@@ -121,6 +132,7 @@ class SimulationConfig:
     queue_capacity: float = 110.0  # tickets abiertos que el equipo maneja sin degradarse
     # Momento del "snapshot": lo que se sabe en ese instante. None = fin del periodo simulado.
     as_of: datetime | None = None
+    drift: DriftScenario | None = None
 
 
 @dataclass(frozen=True)
@@ -133,22 +145,15 @@ class SimulationResult:
 
 def simulate(config: SimulationConfig | None = None) -> SimulationResult:
     config = config or SimulationConfig()
-    rng = np.random.default_rng(config.seed)
     start = pd.Timestamp(config.start, tz=BUSINESS_TZ)
     as_of_s = _as_of_seconds(config, start)
 
-    created_s = _arrival_times(config, rng)
-    n = len(created_s)
-
-    # --- Atributos conocidos en T0 ---
-    true_cat = rng.choice(len(CATEGORIES), size=n, p=CATEGORY_WEIGHTS)
-    misrouted = rng.random(n) < config.misroute_rate
-    shift = rng.integers(1, len(CATEGORIES), size=n)
-    declared_cat = np.where(misrouted, (true_cat + shift) % len(CATEGORIES), true_cat)
-    priority = _choice_by_row(rng, PRIORITY_WEIGHTS_BY_CATEGORY[true_cat])
-    channel = rng.choice(len(CHANNELS), size=n, p=_normalize(config.channel_weights))
-    tier = rng.choice(len(TIERS), size=n, p=TIER_WEIGHTS)
-    product = rng.choice(len(PRODUCTS), size=n, p=PRODUCT_WEIGHTS)
+    days = [_draw_day(config, day) for day in range(config.days)]
+    d = {key: np.concatenate([day[key] for day in days]) for key in days[0]}
+    # Instantes únicos: dos tickets nunca se crean en el mismo segundo (orden sin ambigüedad).
+    created_s = _strictly_increasing(d["created_s"])
+    true_cat, priority, channel, tier = d["true_cat"], d["priority"], d["channel"], d["tier"]
+    misrouted, reassignments = d["misrouted"], d["reassignments"]
     sla_hours = SLA_HOURS[tier, priority]
 
     local_hour = (created_s // HOUR) % 24
@@ -156,8 +161,6 @@ def simulate(config: SimulationConfig | None = None) -> SimulationResult:
     off_hours = (weekday >= 5) | (local_hour < 8) | (local_hour >= 18)
 
     # --- Dinámica posterior a T0 (el modelo NO la ve) ---
-    is_technical = np.isin(true_cat, [CATEGORIES.index("network"), CATEGORIES.index("hardware")])
-    reassignments = rng.poisson(0.25 + 1.2 * misrouted + 0.3 * is_technical)
     base_hours = (
         MEDIAN_HOURS_BY_PRIORITY[priority]
         * CATEGORY_COMPLEXITY[true_cat]
@@ -166,27 +169,30 @@ def simulate(config: SimulationConfig | None = None) -> SimulationResult:
         * np.where(off_hours, OFF_HOURS_FACTOR[priority], 1.0)
         * np.where(misrouted, MISROUTE_FACTOR, 1.0)
         * REASSIGNMENT_FACTOR**reassignments
-        * np.exp(NOISE_SIGMA * rng.standard_normal(n))
+        * np.exp(NOISE_SIGMA * d["noise"])
     )
-    assign_delay_s = rng.integers(60, 30 * 60, size=n) * np.where(off_hours, 4, 1)
+    assign_delay_s = d["assign_delay_s"] * np.where(off_hours, 4, 1)
     response_delay_s = (
-        rng.exponential(FIRST_RESPONSE_MEAN_HOURS[priority]) * HOUR * np.where(off_hours, 3, 1)
+        d["response_exp"] * FIRST_RESPONSE_MEAN_HOURS[priority] * HOUR * np.where(off_hours, 3, 1)
     ).astype(np.int64)
     min_duration_s = assign_delay_s + response_delay_s + 10 * 60
 
-    open_in_queue, resolved_s = _run_queue(
-        created_s, base_hours, min_duration_s, config.queue_capacity
-    )
+    capacity = np.full(len(created_s), config.queue_capacity, dtype=float)
+    if config.drift is not None and config.drift.queue_capacity is not None:
+        drift_s = (pd.Timestamp(config.drift.start, tz=BUSINESS_TZ) - start).total_seconds()
+        capacity[created_s >= drift_s] = config.drift.queue_capacity
+
+    open_in_queue, resolved_s = _run_queue(created_s, base_hours, min_duration_s, capacity)
     assigned_s = created_s + assign_delay_s
     first_response_s = assigned_s + response_delay_s
-    closed_s = resolved_s + rng.integers(HOUR, 48 * HOUR, size=n)
+    closed_s = resolved_s + d["close_offset_s"]
 
-    ticket_ids = _uuids(rng, n)
-    subject, description = _texts(rng, true_cat)
+    ticket_ids = np.array([str(uuid.UUID(bytes=row.tobytes(), version=4)) for row in d["id_bytes"]])
+    subject, description = _texts(true_cat, d["text_picks"], d["has_pii"], d["contact"])
 
     # --- Snapshot: solo lo ocurrido hasta as_of ---
     events = _events(
-        rng, ticket_ids, created_s, assigned_s, first_response_s, resolved_s, closed_s,
+        ticket_ids, created_s, assigned_s, first_response_s, resolved_s, closed_s,
         reassignments, as_of_s, start,
     )  # fmt: skip
     reassign_known = events.loc[events["event_type"] == "reassigned"].groupby("ticket_id").size()
@@ -209,10 +215,10 @@ def simulate(config: SimulationConfig | None = None) -> SimulationResult:
             "ticket_id": ticket_ids,
             "created_at": ts(created_s),
             "channel": np.array(CHANNELS)[channel],
-            "category": np.array(CATEGORIES)[declared_cat],
+            "category": np.array(CATEGORIES)[d["declared_cat"]],
             "priority": np.array(PRIORITIES)[priority],
             "customer_tier": np.array(TIERS)[tier],
-            "product": np.array(PRODUCTS)[product],
+            "product": np.array(PRODUCTS)[d["product"]],
             "subject": subject,
             "description": description,
             "sla_hours": sla_hours.astype(int),
@@ -239,16 +245,39 @@ def _as_of_seconds(config: SimulationConfig, start: pd.Timestamp) -> int:
     return min(int((as_of - start).total_seconds()), end_s)
 
 
-def _arrival_times(config: SimulationConfig, rng: np.random.Generator) -> np.ndarray:
-    days = np.arange(config.days)
-    weekday = (config.start.weekday() + days) % 7
-    counts = rng.poisson(config.tickets_per_day * WEEKDAY_FACTOR[weekday])
-    day_of_ticket = np.repeat(days, counts)
-    hour = rng.choice(24, size=len(day_of_ticket), p=_normalize(HOURLY_PROFILE))
-    created = day_of_ticket * DAY + hour * HOUR + rng.integers(0, HOUR, size=len(hour))
-    created = np.sort(created).astype(np.int64)
-    # Instantes únicos: dos tickets nunca se crean en el mismo segundo (orden sin ambigüedad).
-    return _strictly_increasing(created)
+def _draw_day(config: SimulationConfig, day: int) -> dict[str, np.ndarray]:
+    """Every random draw of one day's tickets, sorted by creation time."""
+    rng = np.random.default_rng([config.seed, day])
+    weekday = (config.start.weekday() + day) % 7
+    n = rng.poisson(config.tickets_per_day * WEEKDAY_FACTOR[weekday])
+    hour = rng.choice(24, size=n, p=_normalize(HOURLY_PROFILE))
+    created_s = (day * DAY + hour * HOUR + rng.integers(0, HOUR, size=n)).astype(np.int64)
+
+    true_cat = rng.choice(len(CATEGORIES), size=n, p=CATEGORY_WEIGHTS)
+    misrouted = rng.random(n) < config.misroute_rate
+    shift = rng.integers(1, len(CATEGORIES), size=n)
+    is_technical = np.isin(true_cat, [CATEGORIES.index("network"), CATEGORIES.index("hardware")])
+    draws = {
+        "created_s": created_s,
+        "true_cat": true_cat,
+        "misrouted": misrouted,
+        "declared_cat": np.where(misrouted, (true_cat + shift) % len(CATEGORIES), true_cat),
+        "priority": _choice_by_row(rng, PRIORITY_WEIGHTS_BY_CATEGORY[true_cat]),
+        "channel": rng.choice(len(CHANNELS), size=n, p=_normalize(config.channel_weights)),
+        "tier": rng.choice(len(TIERS), size=n, p=TIER_WEIGHTS),
+        "product": rng.choice(len(PRODUCTS), size=n, p=PRODUCT_WEIGHTS),
+        "reassignments": rng.poisson(0.25 + 1.2 * misrouted + 0.3 * is_technical),
+        "noise": rng.standard_normal(n),
+        "assign_delay_s": rng.integers(60, 30 * 60, size=n),
+        "response_exp": rng.exponential(1.0, size=n),
+        "close_offset_s": rng.integers(HOUR, 48 * HOUR, size=n),
+        "id_bytes": np.frombuffer(rng.bytes(16 * n), dtype=np.uint8).reshape(n, 16),
+        "text_picks": rng.integers(0, 3, size=(n, 2)),
+        "has_pii": rng.random(n) < PII_PROBABILITY,
+        "contact": rng.integers(1_000_000, 9_999_999, size=n),
+    }
+    order = np.argsort(created_s, kind="stable")
+    return {key: value[order] for key, value in draws.items()}
 
 
 def _strictly_increasing(values: np.ndarray) -> np.ndarray:
@@ -258,13 +287,14 @@ def _strictly_increasing(values: np.ndarray) -> np.ndarray:
 
 
 def _run_queue(
-    created_s: np.ndarray, base_hours: np.ndarray, min_duration_s: np.ndarray, capacity: float
+    created_s: np.ndarray, base_hours: np.ndarray, min_duration_s: np.ndarray, capacity: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray]:
     """Process tickets in creation order, tracking how many are still open.
 
     `open_in_queue[i]` cuenta solo tickets creados ANTES de i y aún no resueltos en ese
     instante: es una feature point-in-time (T0*), calculada sin mirar el futuro.
-    La carga, a su vez, alarga la resolución del ticket nuevo.
+    La carga, a su vez, alarga la resolución del ticket nuevo. `capacity` puede cambiar en el
+    tiempo (escenario de drift).
     """
     n = len(created_s)
     open_in_queue = np.empty(n, dtype=np.int64)
@@ -275,7 +305,7 @@ def _run_queue(
         while pending and pending[0] <= now:
             heapq.heappop(pending)
         open_in_queue[i] = len(pending)
-        overload = min(max(len(pending) / capacity - 1.0, LOAD_BOUNDS[0]), LOAD_BOUNDS[1])
+        overload = min(max(len(pending) / capacity[i] - 1.0, LOAD_BOUNDS[0]), LOAD_BOUNDS[1])
         load_multiplier = math.exp(LOAD_ELASTICITY * overload)
         duration = max(int(base_hours[i] * load_multiplier * HOUR), int(min_duration_s[i]))
         resolved_s[i] = now + duration
@@ -284,7 +314,6 @@ def _run_queue(
 
 
 def _events(
-    rng: np.random.Generator,
     ticket_ids: np.ndarray,
     created_s: np.ndarray,
     assigned_s: np.ndarray,
@@ -295,44 +324,59 @@ def _events(
     as_of_s: int,
     start: pd.Timestamp,
 ) -> pd.DataFrame:
+    # Las reasignaciones se reparten de forma pareja entre la asignación y la resolución.
     idx = np.repeat(np.arange(len(ticket_ids)), reassignments)
-    reassigned_s = assigned_s[idx] + (
-        rng.random(len(idx)) * (resolved_s[idx] - assigned_s[idx])
-    ).astype(np.int64)
+    nth = np.concatenate([np.arange(1, r + 1) for r in reassignments]) if len(idx) else idx
+    fraction = nth / (reassignments[idx] + 1)
+    reassigned_s = assigned_s[idx] + (fraction * (resolved_s[idx] - assigned_s[idx])).astype(
+        np.int64
+    )
+    every = np.arange(len(ticket_ids))
+    zeros = np.zeros(len(ticket_ids), dtype=np.int64)
     parts = [
-        ("created", np.arange(len(ticket_ids)), created_s),
-        ("assigned", np.arange(len(ticket_ids)), assigned_s),
-        ("first_response", np.arange(len(ticket_ids)), first_response_s),
-        ("reassigned", idx, reassigned_s),
-        ("resolved", np.arange(len(ticket_ids)), resolved_s),
-        ("closed", np.arange(len(ticket_ids)), closed_s),
+        ("created", every, zeros, created_s),
+        ("assigned", every, zeros, assigned_s),
+        ("first_response", every, zeros, first_response_s),
+        ("reassigned", idx, nth, reassigned_s),
+        ("resolved", every, zeros, resolved_s),
+        ("closed", every, zeros, closed_s),
     ]
     frame = pd.concat(
-        [pd.DataFrame({"ticket": i, "event_type": name, "at_s": s}) for name, i, s in parts],
+        [
+            pd.DataFrame({"ticket": i, "event_type": name, "nth": k, "at_s": s})
+            for name, i, k, s in parts
+        ],
         ignore_index=True,
     )
     frame = frame[frame["at_s"] <= as_of_s].sort_values(["at_s", "ticket"], kind="stable")
+    ids = ticket_ids[frame["ticket"].to_numpy()]
+    # Identificador determinista: el mismo evento tiene el mismo id en cualquier snapshot.
+    event_ids = [
+        str(uuid.uuid5(uuid.UUID(t), f"{kind}:{k}"))
+        for t, kind, k in zip(ids, frame["event_type"], frame["nth"], strict=True)
+    ]
     return pd.DataFrame(
         {
-            "event_id": _uuids(rng, len(frame)),
-            "ticket_id": ticket_ids[frame["ticket"].to_numpy()],
+            "event_id": event_ids,
+            "ticket_id": ids,
             "event_type": frame["event_type"].to_numpy(),
             "event_at": _timestamps(start, frame["at_s"].to_numpy()),
         }
     )
 
 
-def _texts(rng: np.random.Generator, true_cat: np.ndarray) -> tuple[list[str], list[str]]:
+def _texts(
+    true_cat: np.ndarray, picks: np.ndarray, has_pii: np.ndarray, contact: np.ndarray
+) -> tuple[list[str], list[str]]:
     """Subject/description follow the TRUE category (useful for the routing model in phase 7)."""
     subjects, descriptions = [], []
-    pii = rng.random(len(true_cat)) < PII_PROBABILITY
-    picks = rng.integers(0, 3, size=(len(true_cat), 2))
-    contact = rng.integers(1_000_000, 9_999_999, size=len(true_cat))
     for i, cat_idx in enumerate(true_cat):
         cat = CATEGORIES[cat_idx]
         subjects.append(SUBJECTS[cat][picks[i, 0]])
         text = DESCRIPTIONS[cat][picks[i, 1]]
-        if pii[i]:  # datos personales ficticios: se usan en la fase 8 para probar el enmascarado
+        if has_pii[
+            i
+        ]:  # datos personales ficticios: se usan en la fase 8 para probar el enmascarado
             text += (
                 f" Pueden llamarme al 300{contact[i]}."
                 if contact[i] % 2
@@ -345,11 +389,6 @@ def _texts(rng: np.random.Generator, true_cat: np.ndarray) -> tuple[list[str], l
 def _timestamps(start: pd.Timestamp, seconds: np.ndarray) -> pd.Series:
     """Seconds since start -> tz-aware timestamps in microseconds (PostgreSQL's precision)."""
     return pd.Series(start + pd.to_timedelta(seconds, unit="s")).dt.as_unit("us")
-
-
-def _uuids(rng: np.random.Generator, n: int) -> np.ndarray:
-    raw = rng.bytes(16 * n)
-    return np.array([str(uuid.UUID(bytes=raw[i * 16 : (i + 1) * 16], version=4)) for i in range(n)])
 
 
 def _choice_by_row(rng: np.random.Generator, probabilities: np.ndarray) -> np.ndarray:
