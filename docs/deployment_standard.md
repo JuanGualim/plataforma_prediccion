@@ -1,6 +1,6 @@
 # Estándar de despliegue
 
-> **Estado:** Ejecutado (fases 3 a 5). Implementado en `mlplatform.lifecycle` (política),
+> **Estado:** Ejecutado (fases 3 a 6). Implementado en `mlplatform.lifecycle` (política),
 > `mlplatform.registry` (MLflow y bitácora) y `mlplatform.serving` (API). Probado con dobles en memoria y
 > contra el stack real.
 
@@ -85,3 +85,17 @@ Reglas:
   `monitoring.requests`. El tráfico de prueba debe enviar `X-Traffic-Source: synthetic`.
 - Cada versión registra `reference_profile.json` (fase 5): la "normalidad" contra la que se monitorean
   sus datos y su puntaje. Ver la [política de gobierno](governance_policy.md#5-monitoreo-obligatorio).
+
+## 7. Variables point-in-time (T0\*) (fase 6)
+
+Una variable que resume el pasado en el instante de la predicción (colas, conteos, tasas recientes)
+solo puede entrar a un modelo si cumple estas reglas ([ADR 0010](adr/0010-feature-store-feast-no-por-ahora.md)):
+
+- Está en el diccionario de datos como T0\*, con su definición exacta y de qué campos se deriva.
+- Se calcula con `mlplatform.features.point_in_time` (o con una función equivalente que se use igual
+  al entrenar y al servir): solo eventos **anteriores** a T0 y fechados cuando **se supieron**.
+- Tiene una **prueba de viaje en el tiempo**: su valor en T con la historia completa es igual al
+  calculado con la historia tal como se conocía en T.
+- Si el cliente de la API no puede calcularla, el diseño del serving dice de dónde sale en línea,
+  con qué frescura y qué pasa si no está disponible. Sin eso, no se promueve.
+

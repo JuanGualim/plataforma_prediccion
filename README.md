@@ -69,6 +69,8 @@ make predict-example   # envía dos tickets de ejemplo a la API
 make latency           # mide la latencia de /predict
 make replay ARGS="..."  # simula el tráfico de producción hacia la API (fase 5)
 make monitor ARGS="--from 2025-08-01 --to 2025-10-01"  # reporte de monitoreo en tres niveles
+make feature-experiment # ¿las variables de contexto (T0*) mejoran el modelo? (fase 6)
+make feast-export && make feast-spike  # spike de Feast en su propio entorno (fase 6)
 make test-integration  # pruebas contra PostgreSQL
 make help              # lista todos los comandos
 ```
@@ -100,7 +102,7 @@ Estados: ✅ ejecutado · 🚧 en curso · ⬜ pendiente · 📐 solo diseño
 | 3 | MLflow: tracking, registro, contrato, puerta de promoción, rollback | ✅ |
 | 4 | Serving con FastAPI y Docker Compose | ✅ |
 | 5 | Monitoreo, simulación de drift, reporte de incidente | ✅ |
-| 6 | Feast (opcional y acotado), con criterios de cuándo no se justifica | ⬜ |
+| 6 | Feast (opcional y acotado), con criterios de cuándo no se justifica | ✅ (evaluado, no adoptado) |
 | 7 | Clasificador de texto con PyTorch y Hugging Face | ⬜ |
 | 8 | RAG evaluado (retriever y respuestas por separado), costo por consulta | ⬜ |
 | 9 | Fine-tuning pequeño con LoRA (limitado por hardware: solo CPU) | ⬜ |
@@ -117,6 +119,7 @@ Estados: ✅ ejecutado · 🚧 en curso · ⬜ pendiente · 📐 solo diseño
 - [Resultados fase 4: serving](docs/results/fase4_serving_sla_risk.md)
 - [Resultados fase 5: monitoreo y drift](docs/results/fase5_monitoreo_sla_risk.md)
 - [Post-mortem INC-001: drift por pérdida de capacidad](docs/incidents/INC-001-drift-carga-sla-risk.md)
+- [Resultados fase 6: variables point-in-time y evaluación de Feast](docs/results/fase6_features_sla_risk.md)
 - [Decisiones técnicas (ADR)](docs/adr/)
 - [Estándar de despliegue](docs/deployment_standard.md)
 - [Política de gobierno](docs/governance_policy.md)

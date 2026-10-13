@@ -1,6 +1,6 @@
 # Arquitectura
 
-> **Estado:** fases 1 a 5 completadas. Este documento crece con cada fase.
+> **Estado:** fases 1 a 6 completadas. Este documento crece con cada fase.
 > Convención de honestidad: cada componente se marca como **Ejecutado** (corre y está
 > probado en este repositorio) o **Diseñado** (solo documentado; no se ha ejecutado).
 
@@ -55,7 +55,9 @@
 | Monitoreo en tres niveles y reglas de alerta | `mlplatform.monitoring` (`service`, `drift`, `performance`, `rules`) | 5 | Ejecutado (reporte por lotes; ejecución programada: fase 10) |
 | Tráfico de producción simulado y reporte | `use_cases.sla_risk.replay`, `.monitor` | 5 | Ejecutado (incidente INC-001) |
 | Paneles en tiempo real (Prometheus / Grafana) | — | 10 | Solo diseño |
-| Feature store (Feast) | — | 6 | Pendiente (opcional) |
+| Variables point-in-time (T0\*) y prueba de viaje en el tiempo | `mlplatform.features.point_in_time`, `use_cases.sla_risk.context_features` | 6 | Ejecutado (variables evaluadas, no usadas por el modelo) |
+| Experimento de variables con bootstrap pareado | `use_cases.sla_risk.feature_experiment` | 6 | Ejecutado |
+| Feature store (Feast) | `experiments/feast_spike` (entorno propio) | 6 | Evaluado en un spike y **no adoptado** ([ADR 0010](adr/0010-feature-store-feast-no-por-ahora.md)) |
 | Kubernetes local (kind) | `infra/k8s` | 10 | Pendiente |
 | Despliegue en nube | — | 10 | Solo diseño (no se ejecutará) |
 
@@ -87,6 +89,10 @@
    hallazgos con severidad y escenario del runbook → reporte Markdown + JSON.
 9. **Incidente (fase 5, ejecutado):** hallazgo → runbook (B/C) → rollback (D) o reentrenamiento →
    puerta → verificación con `make monitor`. Ejemplo completo: [INC-001](incidents/INC-001-drift-carga-sla-risk.md).
+10. **Variables T0\* (fase 6, ejecutado):** historia (`support.tickets`) → eventos fechados cuando
+    se supieron → ventanas [T0 − w, T0) con `point_in_time` → la misma función para cada fila de
+    entrenamiento o para el ticket que se está sirviendo. Feast se probó como alternativa para
+    unir y servir esas series ya calculadas ([spike](../experiments/feast_spike/README.md)).
 
 ## Decisiones
 
