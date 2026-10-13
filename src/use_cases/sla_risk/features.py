@@ -47,7 +47,7 @@ def _time_feature_names(transformer, input_features) -> list[str]:
     return TIME_FEATURES
 
 
-def build_preprocessor(scale_numeric: bool) -> ColumnTransformer:
+def build_preprocessor(scale_numeric: bool, numeric: list[str] = NUMERIC) -> ColumnTransformer:
     """One-hot for categories, optional scaling for numbers, derived time features.
 
     `handle_unknown="ignore"`: una categoría nunca vista (p. ej. un canal nuevo) no rompe la
@@ -60,7 +60,7 @@ def build_preprocessor(scale_numeric: bool) -> ColumnTransformer:
                 OneHotEncoder(handle_unknown="ignore", sparse_output=False),
                 CATEGORICAL,
             ),
-            ("numeric", StandardScaler() if scale_numeric else "passthrough", NUMERIC),
+            ("numeric", StandardScaler() if scale_numeric else "passthrough", numeric),
             (
                 "time",
                 FunctionTransformer(time_features, feature_names_out=_time_feature_names),

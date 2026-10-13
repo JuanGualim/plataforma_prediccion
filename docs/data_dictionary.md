@@ -70,6 +70,21 @@ pipeline (`use_cases/sla_risk/features.py`) las transforma así:
 | `sla_hours`, `open_tickets_in_queue` | Estandarizadas (regresión logística) o sin cambio (boosting) |
 | `created_at` | Se derivan `hour_sin`, `hour_cos`, `weekday_sin`, `weekday_cos`, `is_weekend` e `is_off_hours` en hora de Bogotá. **La fecha absoluta nunca llega al modelo** |
 
+## Variables de contexto operativo (fase 6, evaluadas y NO usadas por el modelo)
+
+Se calculan en `use_cases/sla_risk/context_features.py` con `mlplatform.features.point_in_time`.
+No son columnas de ninguna tabla: se derivan de `support.tickets` en el instante T0 de cada ticket.
+El modelo de SLA **no** las usa (ver [resultados de la fase 6](results/fase6_features_sla_risk.md)).
+
+| Variable | Definición en T0 | Disponible en | Fuente y cuidado |
+|---|---|---|---|
+| `arrivals_24h` | Tickets creados en [T0 − 24 h, T0) | T0\* | `created_at`; el propio ticket no cuenta |
+| `breach_rate_7d` | Fracción de incumplimientos entre los resultados **conocidos** en [T0 − 7 d, T0); 0,15 si hay menos de 50 | T0\* | Deriva de `sla_breached` y `resolved_at` (T+/ETIQUETA). Cada resultado se fecha cuando **se supo**: al resolverse si fue a tiempo, al vencer el plazo si se incumplió |
+| `category_queue` | Tickets de la misma categoría declarada creados antes de T0 y no resueltos antes de T0 | T0\* | Deriva de `resolved_at` (T+), usando solo el hecho "no se había resuelto aún" |
+
+Las tres pasan la **prueba de viaje en el tiempo** (`tests/unit/sla_risk/test_context_features.py`):
+calculadas en T con la historia completa dan lo mismo que con la historia tal como se conocía en T.
+
 ## Tabla `support.ticket_events`
 
 Historial de lo ocurrido a cada ticket hasta el snapshot. No se usa como feature en la fase 1.
