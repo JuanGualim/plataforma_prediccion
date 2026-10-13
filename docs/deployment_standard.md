@@ -1,6 +1,6 @@
 # Estándar de despliegue
 
-> **Estado:** Ejecutado (fases 3 y 4). Implementado en `mlplatform.lifecycle` (política),
+> **Estado:** Ejecutado (fases 3 a 5). Implementado en `mlplatform.lifecycle` (política),
 > `mlplatform.registry` (MLflow y bitácora) y `mlplatform.serving` (API). Probado con dobles en memoria y
 > contra el stack real.
 
@@ -81,5 +81,7 @@ Reglas:
   cada `SERVING_REFRESH_SECONDS`).
 - El esquema de la API debe coincidir con la firma del contrato. Si no, el servicio **no carga** ese modelo.
 - El umbral se lee del contrato de la versión servida, nunca del código del servicio.
-- Toda predicción se registra en `monitoring.predictions`. El tráfico de prueba debe enviar
-  `X-Traffic-Source: synthetic`.
+- Toda predicción se registra en `monitoring.predictions`, y toda llamada (también las fallidas) en
+  `monitoring.requests`. El tráfico de prueba debe enviar `X-Traffic-Source: synthetic`.
+- Cada versión registra `reference_profile.json` (fase 5): la "normalidad" contra la que se monitorean
+  sus datos y su puntaje. Ver la [política de gobierno](governance_policy.md#5-monitoreo-obligatorio).

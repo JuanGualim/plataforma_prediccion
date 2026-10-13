@@ -33,17 +33,35 @@ texto) y aplicaciones con LLM (RAG).
   versión. **No** se guardan el texto libre del ticket (`subject`, `description`, que pueden contener
   datos personales) ni otros campos: la API rechaza cualquier campo no declarado. El `ticket_id` se
   guarda solo para unir con el resultado real. El tráfico de prueba se marca como `synthetic`.
-  _Retención: por definir (fase 5)._
+  **Retención (propuesta, no ejecutada):** 13 meses para `monitoring.predictions` y
+  `monitoring.requests`. Alcanza para comparar con el mismo mes del año anterior y para auditar
+  cualquier versión servida en el último año. Después se conservan solo los agregados semanales del
+  reporte de monitoreo. Hoy no hay un proceso de purga: es un volumen local de demostración.
 
 ## 5. Monitoreo obligatorio
 
-_Por definir (fase 5): umbrales mínimos de alertas por nivel (servicio, datos, modelo)._
+Todo modelo que se sirve en la plataforma queda cubierto por estos mínimos (implementados en
+`mlplatform.monitoring`; ver [ADR 0009](adr/0009-monitoreo-en-tres-niveles.md)):
+
+| Nivel | Requisito | Alerta mínima |
+|---|---|---|
+| Servicio | Toda llamada a `/predict` queda en `monitoring.requests` | SEV1 con 5xx > 1 %; SEV3 con p95 > 200 ms |
+| Datos y puntaje | La versión registra `reference_profile.json` al entrenar | SEV3 con PSI ≥ 0,25 en una entrada o en el puntaje, o con una categoría nunca vista |
+| Modelo | Las predicciones guardan un identificador para unirlas con el resultado real | SEV2 si PR-AUC, Brier, calibración o costo se salen de la tolerancia del contrato (≥ 300 etiquetas, ≥ 50 % de cobertura) |
+
+- El reporte siempre muestra la **cobertura de etiquetas**: sin ella no se concluye nada del modelo.
+- El tráfico de prueba (`synthetic`) nunca entra al monitoreo.
+- Hoy el reporte se ejecuta a mano (`make monitor`). La ejecución semanal programada queda para la fase 10.
 
 ## 6. Retiro de modelos
 
 - Una versión reemplazada pasa a `archived` y una revertida a `rolled_back`. **Nunca se borra**: su
   contrato, model card, métricas y artefactos se conservan en MLflow para auditoría y para poder volver a ella.
-- _Por definir (fase 5): criterios para retirar un modelo por degradación sostenida._
+- **Degradación sostenida (fase 5):** si una versión acumula un SEV2 en dos reportes semanales
+  seguidos y ni el rollback ni el reentrenamiento la devuelven a su contrato, el dueño decide entre
+  (a) un nuevo contrato aprobado con métricas peores pero explícitas, o (b) **apagar el uso del modelo**
+  y volver a la regla de negocio (el baseline). Un modelo que falla en silencio es peor que no tener
+  modelo. En INC-001 alcanzó con reentrenar.
 
 ## 7. Específico de GenAI
 
