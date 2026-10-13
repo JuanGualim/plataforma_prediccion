@@ -67,6 +67,8 @@ make models            # versiones, champion y bitácora de eventos
 make serve             # construye y levanta la API; espera a que esté lista
 make predict-example   # envía dos tickets de ejemplo a la API
 make latency           # mide la latencia de /predict
+make replay ARGS="..."  # simula el tráfico de producción hacia la API (fase 5)
+make monitor ARGS="--from 2025-08-01 --to 2025-10-01"  # reporte de monitoreo en tres niveles
 make test-integration  # pruebas contra PostgreSQL
 make help              # lista todos los comandos
 ```
@@ -97,7 +99,7 @@ Estados: ✅ ejecutado · 🚧 en curso · ⬜ pendiente · 📐 solo diseño
 | 2 | Entrenamiento con scikit-learn: pipelines, umbral, métricas para clases desbalanceadas | ✅ |
 | 3 | MLflow: tracking, registro, contrato, puerta de promoción, rollback | ✅ |
 | 4 | Serving con FastAPI y Docker Compose | ✅ |
-| 5 | Monitoreo, simulación de drift, reporte de incidente | ⬜ |
+| 5 | Monitoreo, simulación de drift, reporte de incidente | ✅ |
 | 6 | Feast (opcional y acotado), con criterios de cuándo no se justifica | ⬜ |
 | 7 | Clasificador de texto con PyTorch y Hugging Face | ⬜ |
 | 8 | RAG evaluado (retriever y respuestas por separado), costo por consulta | ⬜ |
@@ -113,6 +115,8 @@ Estados: ✅ ejecutado · 🚧 en curso · ⬜ pendiente · 📐 solo diseño
 - [Resultados fase 2: entrenamiento](docs/results/fase2_entrenamiento_sla_risk.md)
 - [Resultados fase 3: ciclo de vida en MLflow](docs/results/fase3_ciclo_de_vida_sla_risk.md)
 - [Resultados fase 4: serving](docs/results/fase4_serving_sla_risk.md)
+- [Resultados fase 5: monitoreo y drift](docs/results/fase5_monitoreo_sla_risk.md)
+- [Post-mortem INC-001: drift por pérdida de capacidad](docs/incidents/INC-001-drift-carga-sla-risk.md)
 - [Decisiones técnicas (ADR)](docs/adr/)
 - [Estándar de despliegue](docs/deployment_standard.md)
 - [Política de gobierno](docs/governance_policy.md)

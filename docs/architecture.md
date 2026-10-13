@@ -1,6 +1,6 @@
 # Arquitectura
 
-> **Estado:** fases 1 a 4 completadas. Este documento crece con cada fase.
+> **Estado:** fases 1 a 5 completadas. Este documento crece con cada fase.
 > Convención de honestidad: cada componente se marca como **Ejecutado** (corre y está
 > probado en este repositorio) o **Diseñado** (solo documentado; no se ha ejecutado).
 
@@ -50,7 +50,11 @@
 | Recarga del champion sin reiniciar | `mlplatform.serving.models.ModelHolder` | 4 | Ejecutado (0 errores en promoción + rollback con tráfico) |
 | Registro de predicciones | `mlplatform.serving.prediction_log` (`monitoring.predictions`) | 4 | Ejecutado |
 | Imagen de serving y servicio en Compose | `infra/serving/Dockerfile`, `docker-compose.yml` | 4 | Ejecutado |
-| Monitoreo | `mlplatform.monitoring` | 5 | Pendiente |
+| Registro de peticiones (servicio) | `mlplatform.serving` (`monitoring.requests`, escritura por lotes) | 5 | Ejecutado |
+| Perfil de referencia por versión | `mlplatform.monitoring.drift`, `use_cases.sla_risk.monitoring` | 5 | Ejecutado (`reference_profile.json` en MLflow) |
+| Monitoreo en tres niveles y reglas de alerta | `mlplatform.monitoring` (`service`, `drift`, `performance`, `rules`) | 5 | Ejecutado (reporte por lotes; ejecución programada: fase 10) |
+| Tráfico de producción simulado y reporte | `use_cases.sla_risk.replay`, `.monitor` | 5 | Ejecutado (incidente INC-001) |
+| Paneles en tiempo real (Prometheus / Grafana) | — | 10 | Solo diseño |
 | Feature store (Feast) | — | 6 | Pendiente (opcional) |
 | Kubernetes local (kind) | `infra/k8s` | 10 | Pendiente |
 | Despliegue en nube | — | 10 | Solo diseño (no se ejecutará) |
@@ -77,9 +81,12 @@
    modelo `@champion` en memoria → respuesta con versión y umbral → registro en `monitoring.predictions`
    después de responder. El servicio consulta el alias cada 15 s y cambia de versión sin reiniciar.
 
-_Por completar en las siguientes fases:_
-
-1. **Retroalimentación:** llega la etiqueta real → unión con la predicción → métricas del modelo.
+8. **Monitoreo (fase 5, ejecutado):** `make monitor` → predicciones `live` de la versión por fecha del
+   evento → (a) servicio desde `monitoring.requests`; (b) PSI contra el `reference_profile.json` de esa
+   versión; (c) unión con `support.tickets` cuando llega el resultado real → métricas vs. contrato →
+   hallazgos con severidad y escenario del runbook → reporte Markdown + JSON.
+9. **Incidente (fase 5, ejecutado):** hallazgo → runbook (B/C) → rollback (D) o reentrenamiento →
+   puerta → verificación con `make monitor`. Ejemplo completo: [INC-001](incidents/INC-001-drift-carga-sla-risk.md).
 
 ## Decisiones
 
