@@ -2,7 +2,7 @@
 .DEFAULT_GOAL := help
 .PHONY: help env setup up down logs psql db-reset lint format test test-integration \
         data baseline train promote rollback models serve serve-dev predict-example \
-        latency replay monitor clean
+        latency replay monitor feature-experiment feast-export feast-spike feast-clean clean
 
 UV ?= uv
 
@@ -97,6 +97,21 @@ replay: ## [Fase 5] Simula el tráfico de producción hacia la API (ARGS="--from
 
 monitor: ## [Fase 5] Reporte de monitoreo en tres niveles (ARGS="--from ... --to ...")
 	$(UV) run python -m use_cases.sla_risk.monitor $(ARGS)
+
+# --- Variables point-in-time y Feast (fase 6) ----------------------------------
+feature-experiment: ## [Fase 6] ¿Las variables de contexto (T0*) mejoran el modelo? Reporte con bootstrap
+	$(UV) run python -m use_cases.sla_risk.feature_experiment $(ARGS)
+
+feast-export: ## [Fase 6] Calcula la serie horaria de variables y la deja en Postgres para Feast
+	$(UV) run python -m use_cases.sla_risk.feast_export
+
+feast-spike: ## [Fase 6] Spike de Feast en su propio entorno (pandas<3): paridad, costo y latencia
+	cd experiments/feast_spike && $(UV) sync -q && $(UV) run python run_spike.py
+
+feast-clean: ## [Fase 6] Borra los esquemas y el registro del spike de Feast
+	docker compose exec -T postgres sh -c 'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" \
+		-c "DROP SCHEMA IF EXISTS feast_spike CASCADE; DROP SCHEMA IF EXISTS feast_online CASCADE;"'
+	rm -rf experiments/feast_spike/feature_repo/data experiments/feast_spike/.venv
 
 # --- Limpieza ----------------------------------------------------------------
 clean: ## Borra cachés locales (no toca datos ni volúmenes)

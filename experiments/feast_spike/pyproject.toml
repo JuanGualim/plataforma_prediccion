@@ -1,0 +1,15 @@
+# Spike de Feast (fase 6): proyecto APARTE, con su propio entorno y lockfile.
+# Feast 0.66 exige pandas<3 y la plataforma usa pandas 3: instalarlo en el proyecto principal
+# obligaría a bajar pandas en toda la plataforma por un componente experimental.
+[project]
+name = "feast-spike"
+version = "0.1.0"
+description = "Evaluación acotada de Feast para las variables de contexto del modelo de SLA."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "feast[postgres]==0.66.0",
+    "python-dotenv>=1.0",
+]
+
+[tool.uv]
+package = false

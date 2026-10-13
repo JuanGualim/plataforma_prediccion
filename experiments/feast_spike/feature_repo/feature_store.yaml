@@ -1,0 +1,23 @@
+# Configuración de Feast. Las credenciales salen del .env del proyecto (nunca en este archivo).
+project: sla_spike
+provider: local
+registry: data/registry.db          # catálogo de entidades y vistas (archivo local, ignorado por git)
+offline_store:                       # historia: Feast hace el point-in-time join DENTRO de Postgres
+  type: postgres
+  host: ${POSTGRES_HOST}
+  port: ${POSTGRES_PORT}
+  database: ${POSTGRES_DB}
+  db_schema: feast_spike
+  user: ${POSTGRES_USER}
+  password: ${POSTGRES_PASSWORD}
+  sslmode: disable                  # Postgres local sin TLS; fuera de la laptop: verify-full
+online_store:                        # último valor por clave, para servir en línea
+  type: postgres
+  host: ${POSTGRES_HOST}
+  port: ${POSTGRES_PORT}
+  database: ${POSTGRES_DB}
+  db_schema: feast_online
+  user: ${POSTGRES_USER}
+  password: ${POSTGRES_PASSWORD}
+  sslmode: disable                  # Postgres local sin TLS; fuera de la laptop: verify-full
+entity_key_serialization_version: 3

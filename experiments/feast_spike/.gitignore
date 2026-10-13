@@ -1,0 +1,2 @@
+# Registro local de Feast (se regenera con `make feast-spike`)
+feature_repo/data/
